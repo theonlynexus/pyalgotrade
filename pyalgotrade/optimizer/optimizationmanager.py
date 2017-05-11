@@ -17,10 +17,27 @@
 """
 .. moduleauthor:: Massimo Fierro <massimo.fierro@gmail.com>
 """
-
 import zmq
 import threading
 import time
+import pickle
+import json
+
+from tornado import web
+from zmq.eventloop import ioloop
+
+
+class BatchParameters():
+
+    def __init__(self, uid, submitter, description,
+                 data, feedPickle, stratCode, paramGrid):
+        self.uid = uid
+        self.submitter = submitter
+        self.description = description
+        self.data = data
+        self.feedPickle = feedPickle
+        self.stratCode = stratCode
+        self.paramGrid = paramGrid
 
 
 class OptimizationManager(threading.Thread):
@@ -46,10 +63,13 @@ class OptimizationManager(threading.Thread):
 
     zmqContext = zmq.Context.instance()
 
-    def __init__(self,
-                 clientIfAddr="127.0.0.1", clientRequestPort=5000, 
+    router = None
+    loop = None
+
+    def __init__(self, webIfAddr="127.0.0.1", webPort=5080,
+                 clientIfAddr="127.0.0.1", clientRequestPort=5000,
                  clientReplyPort=5001,
-                 workerIfAddr="127.0.0.1", workerRequestPort=5002, 
+                 workerIfAddr="127.0.0.1", workerRequestPort=5002,
                  workerReplyPort=5003):
         super(OptimizationManager, self).__init__(
             group=None, name="OptimizationManager")
@@ -79,6 +99,15 @@ class OptimizationManager(threading.Thread):
         self.poller.register(self.clientRequestSocket, zmq.POLLIN)
         self.poller.register(self.workerRequestSocket, zmq.POLLIN)
 
+        # Init Tornado loop
+        ioloop.install()
+        self.loop = ioloop.IOLoop.instance()
+
+        self.loop.add_handler(self.clientRequestSocket,
+                              self.clientRequestHandler, zmq.POLLIN)
+        self.loop.add_handler(self.workerRequestSocket,
+                              self.workerRequestHandler, zmq.POLLIN)
+
     def __enter__(self):
         return self
 
@@ -97,10 +126,13 @@ class OptimizationManager(threading.Thread):
         self._shutdown()
 
     def processClientRequest(self, topicFrame, paramsFrame):
-        # topic = str(topicFrame.buffer)
+        if topicFrame == "SUBMIT_BATCH":
+            params = pickle.loads(json.loads(paramsFrame))
+            print("{}, {}, {}".format(
+                params.uid, params.submitter, params.description))
         # params = json.loads(str(paramsFrame.buffer))
-        print("Client request: {}, {}".format(
-              str(topicFrame), str(paramsFrame)))
+        # print("Client request: {}, {}".format(
+        #       str(topicFrame), str(paramsFrame)))
 
     def processWorkerRequest(self, topicFrame, paramsFrame):
         # topic = str(topicFrame.buffer)
@@ -108,46 +140,30 @@ class OptimizationManager(threading.Thread):
         print("Worker request: {}, {}".format(
               str(topicFrame), str(paramsFrame)))
 
-    def run(self):
-        print("OptimizationManager running")
+    def clientRequestHandler(self, socket, events):
+        print("Client Request")
+        frames = socket.recv_multipart()
+        if len(frames) < 2:
+            raise Exception("Client request too short")
+        elif len(frames) > 2:
+            raise Exception("Client request too long")
+        topic = frames.pop(0)
+        params = frames.pop(0)
+        self.processClientRequest(topic, params)
 
-        while self.doRun:
-            # Poll on a timer so that we can regularly
-            # check the loop condition
-            events = dict(self.poller.poll(1000))
+    def workerRequestHandler(self, socket, events):
+        print("Worker Request")
+        frames = socket.recv_multipart()
+        if len(frames) < 2:
+            raise Exception("Worker request too short")
+        elif len(frames) > 2:
+            raise Exception("Worker request too long")
+        topic = frames.pop(0)
+        params = frames.pop(0)
+        self.processClientRequest(topic, params)
 
-            print("len(events): {}".format(len(events)))
-            if len(events) == 0:
-                continue
-
-            # This will process one message from each socket
-            # per iteration (if available)
-            if self.clientRequestSocket in events:
-                print("Client Request")
-                frames = self.clientRequestSocket.recv_multipart()
-                if len(frames) < 2:
-                    raise Exception("Client request too short")
-                elif len(frames) > 2:
-                    raise Exception("Client request too long")
-                topic = frames.pop(0)
-                params = frames.pop(0)
-                self.processClientRequest(topic, params)
-            if self.workerRequestSocket in events:
-                print("Worker Request")
-                frames = self.workerRequestSocket.recv_multipart()
-                if len(frames) < 2:
-                    raise Exception("Worker request too short")
-                elif len(frames) > 2:
-                    raise Exception("Worker request too long")
-                topic = frames.pop([0])
-                params = frames.pop([0])
-                self.processWorkerRequest(topic, params)
+    def start(self):
+        self.loop.start()
 
     def stop(self):
-        self.doRun = False
-
-
-if __name__ == '__main__':
-    manager = OptimizationManager()
-    manager.doRun = True
-    manager.start()
+        self.loop.stop()

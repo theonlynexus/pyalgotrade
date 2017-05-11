@@ -16,5 +16,6 @@ Contents:
     stratanalyzer
     plotter
     optimizer
+    optimizationmanager
     marketsession
 
