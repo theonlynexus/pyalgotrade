@@ -86,7 +86,7 @@ class Job():
         return ", ".join(map(lambda x: self.decorateParam(x), self.params))
 
     def run(self):
-        modname = "feed_"+string.replace(self.batchUid,"-","_")
+        modname = "feed_" + string.replace(self.batchUid, "-", "_")
         filename = modname + ".py"
         with open(filename, 'wb') as f:
             f.write(zlib.decompress(self.feedCode))
@@ -125,11 +125,10 @@ class Job():
         exec(codeline)
         parCsv = self.makeParamList(self.params)
         params = "(self.feed, " + parCsv + ")"
-        codeline = "self.strat = " + modname + "."+ self.stratName + params
+        codeline = "self.strat = " + modname + "." + self.stratName + params
         exec(codeline)
 
         self.strat.run()
-        print(self.strat.getResult())
 
 
 ###################################################
@@ -143,6 +142,14 @@ class BatchSubmitParameters():
         self.feed = feed
         self.strat = strat
         self.paramGrid = paramGrid
+
+
+###################################################
+class ResultSubmitParameters():
+    def __init__(self, workerUid, jobParams, returns):
+        self.workerUid = workerUid
+        self.jobParams = jobParams
+        self.returns = returns
 
 
 ###################################################
@@ -167,6 +174,8 @@ class Batch():
             self.paramGrid.append(paramSet)
 
         self.completed = []
+
+        self.returns = dict()
 
 
 ###################################################
@@ -267,9 +276,20 @@ class OptimizationManager(threading.Thread):
             self.batches.append(batch)
 
     def processWorkerRequest(self, topicFrame, paramsFrame):
+        if topicFrame == "SUBMIT_RESULTS":
+            params = pickle.loads(paramsFrame)
+            print("SUBMIT_RESULTS from worker: {}".format(params.workerUid))
+            for batch in self.batches:
+                if batch.uid == params.jobParams.batchUid:
+                    batch.returns[params.jobParams.params] = params.returns
+                    batch.paramGrid.remove(params.jobParams.params)
+                    batch.completed.append(params.jobParams.params)
+                    print("Returns for job: {} = {}".format(
+                        params.jobParams.uid, params.returns))
+
         if topicFrame == "JOB_REQUEST":
             params = pickle.loads(paramsFrame)
-            print("Job request from worker: {}".format(params.workerUid))
+            print("JOB_REQUEST from worker: {}".format(params.workerUid))
 
             if len(self.batches) > 0:
                 batch = self.batches[0]

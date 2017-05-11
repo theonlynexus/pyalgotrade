@@ -11,6 +11,7 @@ import time
 import zlib
 from pyalgotrade.barfeed import yahoofeed
 from pyalgotrade.optimizer.optimizationmanager import JobRequestParameters
+from pyalgotrade.optimizer.optimizationmanager import ResultSubmitParameters
 from pyalgotrade.optimizer.optimizationmanager import Job
 
 if __name__ == '__main__':
@@ -26,17 +27,21 @@ if __name__ == '__main__':
     receiveSocket.subscribe(str(myUid))
     receiveSocket.connect("tcp://127.0.0.1:5003")
 
-    time.sleep(1)
-
-    sendSocket.send("JOB_REQUEST", flags=zmq.SNDMORE)
-    sendSocket.send_pyobj(jobRequestParams)
-
     time.sleep(10)
 
-    frames = receiveSocket.recv_multipart()
-    topic = frames.pop(0)
-    jobParams = pickle.loads(frames.pop(0))
+    while True:
+        sendSocket.send("JOB_REQUEST", flags=zmq.SNDMORE)
+        sendSocket.send_pyobj(jobRequestParams)
 
-    job = Job(jobParams)
+        frames = receiveSocket.recv_multipart()
+        topic = frames.pop(0)
+        jobParams = pickle.loads(frames.pop(0))
 
-    job.run()
+        job = Job(jobParams)
+        job.run()
+
+        resultSubmitParams = ResultSubmitParameters(myUid,
+                                                    jobParams,
+                                                    job.strat.getResult())
+        sendSocket.send("SUBMIT_RESULTS", zmq.SNDMORE)
+        sendSocket.send_pyobj(resultSubmitParams)
