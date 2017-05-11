@@ -26,10 +26,10 @@ if __name__ == '__main__':
         dia3 = zlib.compress(f.read())
 
     with open("samples/rsi2.py", 'r') as f:
-        stratCode = f.read()
+        stratCode = zlib.compress(f.read())
 
     with open(os.path.abspath(yahoofeed.__file__), 'r') as f:
-        feedCode = f.read()
+        feedCode = zlib.compress(f.read())
 
     paramGrid = [
         ["dia"],

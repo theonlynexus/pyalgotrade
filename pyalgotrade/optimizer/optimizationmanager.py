@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# http://stackoverflow.com/questions/34709390/how-can-i-import-a-pyc-compiled-python-file-and-use-it
+
 """
 .. moduleauthor:: Massimo Fierro <massimo.fierro@gmail.com>
 """
@@ -21,12 +23,14 @@ import sys
 sys.path = ["."] + sys.path
 import uuid
 import zmq
+import marshal
 import zlib
 import threading
 import time
 import pickle
 import json
 import itertools
+import os
 from tornado import web
 from zmq.eventloop import ioloop
 
@@ -54,34 +58,50 @@ class JobRequestParameters():
 ###################################################
 class Job():
     def __init__(self, jobParameters):
-        self.uid = jobParamters.uid
-        self.batchUid = jobParamters.batchUid
+        self.uid = jobParameters.uid
+        self.batchUid = jobParameters.batchUid
 
         self.data = jobParameters.data
 
-        self.feedName = jobParamters.feed[0]
+        self.feedName = jobParameters.feed[0]
         self.feedCode = jobParameters.feed[1]
 
-        self.stratName = jobParamters.strat[0]
-        self.stratCode = jobParamters.strat[1]
+        self.stratName = jobParameters.strat[0]
+        self.stratCode = jobParameters.strat[1]
 
         self.params = jobParameters.params
 
+        self.feed = None
+        self.strat = None
+
     def run(self):
-        exec(self.feedCode)
+        filename = self.batchUid + "_feed.pyc"
+        with open(filename, 'wb') as f:
+            f.write(zlib.decompress(self.feedCode))
+            f.close()
+        with open(filename, 'rb') as f:
+            f.seek(8)  # go past first eight bytes
+            code_obj = marshal.load(f)
+        exec(code_obj)
         codeline = "self.feed = " + self.feedName + "()"
         exec(codeline)
 
         i = 0
-        for (instrument, data) in jobParameters.data:
+        for (instrument, data) in self.data:
             filename = self.batchUid + "_data_" + str(i) + ".csv"
             if not os.path.exists(filename):
                 with open(filename, 'w') as f:
                     f.write(zlib.decompress(data))
+                    f.close()
             self.feed.addBarsFromCSV(instrument, filename)
             i = i + 1
 
-        exec(self.stratCode)
+        filename = self.batchUid + "_strat.py"
+        with open(filename, 'w') as f:
+            f.write(zlib.decompress(self.stratCode))
+            f.close()
+        execfile(filename)
+        exec(zlib.decompress(self.stratCode))
         codeline = "self.strat = " + self.stratName + "(self.feed, " + str(
             *self.params) + ")"
         exec(codeline)
@@ -108,14 +128,9 @@ class Batch():
         self.uid = batchParameters.uid
         self.submitter = batchParameters.submitter
         self.description = batchParameters.description
-
         self.data = batchParameters.data
-
-        self.feedName = batchParameters.feed[0]
-        self.feedCode = batchParameters.feed[1]
-
-        self.stratName = batchParameters.strat[0]
-        self.stratCode = batchParameters.strat[1]
+        self.feed = batchParameters.feed
+        self.strat = batchParameters.strat
 
         codeline = "paramIter = itertools.product("
         args = []
@@ -158,8 +173,8 @@ class OptimizationManager(threading.Thread):
     router = None
     loop = None
 
-    self.batches = []
-    self.completeBatches = []
+    batches = []
+    completeBatches = []
 
     def __init__(self, webIfAddr="127.0.0.1", webPort=5080,
                  clientIfAddr="127.0.0.1", clientRequestPort=5000,
@@ -190,14 +205,14 @@ class OptimizationManager(threading.Thread):
         self.workerReplySocket.bind(
             "tcp://" + str(workerIfAddr) + ":" + str(workerReplyPort))
 
+        # Setup poller
         self.poller = zmq.Poller()
         self.poller.register(self.clientRequestSocket, zmq.POLLIN)
         self.poller.register(self.workerRequestSocket, zmq.POLLIN)
 
-        # Init Tornado loop
+        # Setup Tornado loop
         ioloop.install()
         self.loop = ioloop.IOLoop.instance()
-
         self.loop.add_handler(self.clientRequestSocket,
                               self.clientRequestHandler, zmq.POLLIN)
         self.loop.add_handler(self.workerRequestSocket,
@@ -231,11 +246,13 @@ class OptimizationManager(threading.Thread):
     def processWorkerRequest(self, topicFrame, paramsFrame):
         if topicFrame == "JOB_REQUEST":
             params = pickle.loads(paramsFrame)
+            print("Job request from worker: {}".format(params.workerUid))
+
             if len(self.batches) > 0:
                 batch = self.batches[0]
                 if len(batch.paramGrid) > 0:
                     jobParams = JobSubmitParameters(uuid.uuid4(),
-                                                    batch.batchUid,
+                                                    batch.uid,
                                                     batch.submitter,
                                                     batch.description,
                                                     batch.data,
@@ -245,6 +262,11 @@ class OptimizationManager(threading.Thread):
                     self.workerReplySocket.send(params.workerUid,
                                                 flags=zmq.SNDMORE)
                     self.workerReplySocket.send_pyobj(jobParams)
+                    print("Sending job [{}, {}, {}] "
+                          "to worker: {}".format(jobParams.batchUid,
+                                                 jobParams.strat[0],
+                                                 jobParams.params,
+                                                 params.workerUid))
                 else:
                     batch.completed.append(batch.paramGrid.pop())
 
@@ -268,7 +290,7 @@ class OptimizationManager(threading.Thread):
             raise Exception("Worker request too long")
         topic = frames.pop(0)
         params = frames.pop(0)
-        self.processClientRequest(topic, params)
+        self.processWorkerRequest(topic, params)
 
     def start(self):
         self.loop.start()
