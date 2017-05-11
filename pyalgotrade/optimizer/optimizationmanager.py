@@ -17,29 +17,121 @@
 """
 .. moduleauthor:: Massimo Fierro <massimo.fierro@gmail.com>
 """
+import sys
+sys.path = ["."] + sys.path
+import uuid
 import zmq
+import zlib
 import threading
 import time
 import pickle
 import json
-
+import itertools
 from tornado import web
 from zmq.eventloop import ioloop
 
 
-class BatchParameters():
+###################################################
+class JobSubmitParameters():
+    def __init__(self, uid, batchUid, submitter, description,
+                 data, feed, strat, params):
+        self.uid = uid
+        self.batchUid = batchUid
+        self.submitter = submitter
+        self.description = description
+        self.data = data
+        self.feed = feed
+        self.strat = strat
+        self.params = params
 
+
+###################################################
+class JobRequestParameters():
+    def __init__(self, workerUid):
+        self.workerUid = workerUid
+
+
+###################################################
+class Job():
+    def __init__(self, jobParameters):
+        self.uid = jobParamters.uid
+        self.batchUid = jobParamters.batchUid
+
+        self.data = jobParameters.data
+
+        self.feedName = jobParamters.feed[0]
+        self.feedCode = jobParameters.feed[1]
+
+        self.stratName = jobParamters.strat[0]
+        self.stratCode = jobParamters.strat[1]
+
+        self.params = jobParameters.params
+
+    def run(self):
+        exec(self.feedCode)
+        codeline = "self.feed = " + self.feedName + "()"
+        exec(codeline)
+
+        i = 0
+        for (instrument, data) in jobParameters.data:
+            filename = self.batchUid + "_data_" + str(i) + ".csv"
+            if not os.path.exists(filename):
+                with open(filename, 'w') as f:
+                    f.write(zlib.decompress(data))
+            self.feed.addBarsFromCSV(instrument, filename)
+            i = i + 1
+
+        exec(self.stratCode)
+        codeline = "self.strat = " + self.stratName + "(self.feed, " + str(
+            *self.params) + ")"
+        exec(codeline)
+
+        self.strat.run()
+
+
+###################################################
+class BatchSubmitParameters():
     def __init__(self, uid, submitter, description,
-                 data, feedPickle, stratCode, paramGrid):
+                 data, feed, strat, paramGrid):
         self.uid = uid
         self.submitter = submitter
         self.description = description
         self.data = data
-        self.feedPickle = feedPickle
-        self.stratCode = stratCode
+        self.feed = feed
+        self.strat = strat
         self.paramGrid = paramGrid
 
 
+###################################################
+class Batch():
+    def __init__(self, batchParameters):
+        self.uid = batchParameters.uid
+        self.submitter = batchParameters.submitter
+        self.description = batchParameters.description
+
+        self.data = batchParameters.data
+
+        self.feedName = batchParameters.feed[0]
+        self.feedCode = batchParameters.feed[1]
+
+        self.stratName = batchParameters.strat[0]
+        self.stratCode = batchParameters.strat[1]
+
+        codeline = "paramIter = itertools.product("
+        args = []
+        for i in range(0, len(batchParameters.paramGrid)):
+            args.append("batchParameters.paramGrid[{}]".format(i))
+        codeline = codeline + ", ".join(args) + ")"
+        exec(codeline)
+
+        self.paramGrid = []
+        for paramSet in paramIter:
+            self.paramGrid.append(paramSet)
+
+        self.completed = []
+
+
+###################################################
 class OptimizationManager(threading.Thread):
     """Optimization manager: receives jobs from submitters, distributes them
     to workers.
@@ -65,6 +157,9 @@ class OptimizationManager(threading.Thread):
 
     router = None
     loop = None
+
+    self.batches = []
+    self.completeBatches = []
 
     def __init__(self, webIfAddr="127.0.0.1", webPort=5080,
                  clientIfAddr="127.0.0.1", clientRequestPort=5000,
@@ -127,18 +222,31 @@ class OptimizationManager(threading.Thread):
 
     def processClientRequest(self, topicFrame, paramsFrame):
         if topicFrame == "SUBMIT_BATCH":
-            params = pickle.loads(json.loads(paramsFrame))
+            params = pickle.loads(paramsFrame)
             print("{}, {}, {}".format(
                 params.uid, params.submitter, params.description))
-        # params = json.loads(str(paramsFrame.buffer))
-        # print("Client request: {}, {}".format(
-        #       str(topicFrame), str(paramsFrame)))
+            batch = Batch(params)
+            self.batches.append(batch)
 
     def processWorkerRequest(self, topicFrame, paramsFrame):
-        # topic = str(topicFrame.buffer)
-        # params = json.loads(str(paramsFrame.buffer))
-        print("Worker request: {}, {}".format(
-              str(topicFrame), str(paramsFrame)))
+        if topicFrame == "JOB_REQUEST":
+            params = pickle.loads(paramsFrame)
+            if len(self.batches) > 0:
+                batch = self.batches[0]
+                if len(batch.paramGrid) > 0:
+                    jobParams = JobSubmitParameters(uuid.uuid4(),
+                                                    batch.batchUid,
+                                                    batch.submitter,
+                                                    batch.description,
+                                                    batch.data,
+                                                    batch.feed,
+                                                    batch.strat,
+                                                    batch.paramGrid[0])
+                    self.workerReplySocket.send(params.workerUid,
+                                                flags=zmq.SNDMORE)
+                    self.workerReplySocket.send_pyobj(jobParams)
+                else:
+                    batch.completed.append(batch.paramGrid.pop())
 
     def clientRequestHandler(self, socket, events):
         print("Client Request")
