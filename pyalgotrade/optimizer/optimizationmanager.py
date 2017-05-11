@@ -29,8 +29,10 @@ import threading
 import time
 import pickle
 import json
+import imp
 import itertools
 import os
+import string
 from tornado import web
 from zmq.eventloop import ioloop
 
@@ -74,16 +76,29 @@ class Job():
         self.feed = None
         self.strat = None
 
+    def decorateParam(self, param):
+        if isinstance(param, basestring):
+            return '"{}"'.format(param)
+        else:
+            return str(param)
+
+    def makeParamList(self, params):
+        return ", ".join(map(lambda x: self.decorateParam(x), self.params))
+
     def run(self):
-        filename = self.batchUid + "_feed.pyc"
+        modname = "feed_"+string.replace(self.batchUid,"-","_")
+        filename = modname + ".py"
         with open(filename, 'wb') as f:
             f.write(zlib.decompress(self.feedCode))
             f.close()
-        with open(filename, 'rb') as f:
-            f.seek(8)  # go past first eight bytes
-            code_obj = marshal.load(f)
-        exec(code_obj)
-        codeline = "self.feed = " + self.feedName + "()"
+        try:
+            (modfile, pathname, desc) = imp.find_module(modname, ["."])
+            imp.load_module(modname, modfile, pathname, desc)
+        finally:
+            modfile.close()
+        codeline = "import " + modname
+        exec(codeline)
+        codeline = "self.feed = " + modname + "." + self.feedName + "()"
         exec(codeline)
 
         i = 0
@@ -96,17 +111,25 @@ class Job():
             self.feed.addBarsFromCSV(instrument, filename)
             i = i + 1
 
-        filename = self.batchUid + "_strat.py"
+        modname = "strat_" + string.replace(self.batchUid, "-", "_")
+        filename = modname + ".py"
         with open(filename, 'w') as f:
             f.write(zlib.decompress(self.stratCode))
             f.close()
-        execfile(filename)
-        exec(zlib.decompress(self.stratCode))
-        codeline = "self.strat = " + self.stratName + "(self.feed, " + str(
-            *self.params) + ")"
+        try:
+            (modfile, pathname, desc) = imp.find_module(modname, ["."])
+            imp.load_module(modname, modfile, pathname, desc)
+        finally:
+            modfile.close()
+        codeline = "import " + modname
+        exec(codeline)
+        parCsv = self.makeParamList(self.params)
+        params = "(self.feed, " + parCsv + ")"
+        codeline = "self.strat = " + modname + "."+ self.stratName + params
         exec(codeline)
 
         self.strat.run()
+        print(self.strat.getResult())
 
 
 ###################################################

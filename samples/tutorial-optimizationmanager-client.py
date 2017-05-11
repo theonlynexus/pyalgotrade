@@ -28,8 +28,10 @@ if __name__ == '__main__':
     with open("samples/rsi2.py", 'r') as f:
         stratCode = zlib.compress(f.read())
 
-    with open(os.path.abspath(yahoofeed.__file__), 'r') as f:
+    #with open(os.path.abspath(yahoofeed.__file__), 'r') as f:
+    with open("pyalgotrade/barfeed/yahoofeed.py", 'r') as f:
         feedCode = zlib.compress(f.read())
+    print("Using the following barfeed file: "+os.path.abspath(yahoofeed.__file__))
 
     paramGrid = [
         ["dia"],
