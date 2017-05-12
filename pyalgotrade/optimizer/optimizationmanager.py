@@ -32,6 +32,7 @@ import itertools
 import os
 import random
 import string
+import tornado
 from tornado import web
 from zmq.eventloop import ioloop
 
@@ -180,6 +181,40 @@ class Batch():
 
 
 ###################################################
+class MainHandler(tornado.web.RequestHandler):
+    def initialize(self, batches, completeBatches):
+        self.batches = batches
+        self.completeBatches = completeBatches
+
+    def get(self):
+        self.write("<h3>Pending optimization batches</h3>")
+        for batch in self.batches:
+            self.write("<p>")
+            self.write("Batch {}".format(batch.uid))
+            self.write("<ul>")
+            self.write("<li>Submitter: {}</li>".format(batch.submitter))
+            self.write("<li>Description: {}</li>".format(batch.description))
+            self.write("<li>Strategy: {}</li>".format(batch.strat[0]))
+            self.write("<li>Jobs - Remaining: {}, Pending: {}, "
+                       "Completed: {}</li>".format(
+                           len(batch.paramGrid), len(batch.processing),
+                           len(batch.completed)))
+            self.write("</ul>")
+            self.write("</p>")
+
+        self.write("<h3>Complete optimization batches</h3>")
+        for batch in self.completeBatches:
+            self.write("<p>")
+            self.write("Batch {}".format(batch.uid))
+            self.write("<ul>")
+            self.write("<li>Submitter: {}</li>".format(batch.submitter))
+            self.write("<li>Description: {}</li>".format(batch.description))
+            self.write("<li>Strategy: {}</li>".format(batch.strat[0]))
+            self.write("</ul>")
+            self.write("</p>")
+
+
+###################################################
 class OptimizationManager(threading.Thread):
     """Optimization manager: receives jobs from submitters, distributes them
     to workers.
@@ -251,6 +286,13 @@ class OptimizationManager(threading.Thread):
         self.loop.add_handler(self.workerRequestSocket,
                               self.workerRequestHandler, zmq.POLLIN)
 
+        # Setup Tornado application (the web interface)
+        self.application = tornado.web.Application([
+            (r"/", MainHandler, dict(batches=self.batches,
+                                     completeBatches=self.completeBatches)),
+        ])
+        self.application.listen(webPort)
+
     def __enter__(self):
         return self
 
@@ -313,7 +355,7 @@ class OptimizationManager(threading.Thread):
                                                  jobParams.strat[0],
                                                  jobParams.params,
                                                  params.workerUid))
-                elif len(batch.processing) == 0 and len(batch.processing) > 0:
+                elif len(batch.paramGrid) == 0 and len(batch.processing) > 0:
                     # Re-distribute pending workload and see if anyone
                     # returns results faster
                     idx = random.randrange(0, len(batch.processing))
@@ -336,7 +378,7 @@ class OptimizationManager(threading.Thread):
                 else:
                     # Both our non-pending and pending job lists are empty,
                     # we're done: open a bottle of spumante!
-                    batch.completed.append(batch.paramGrid.pop())
+                    self.completeBatches.append(self.batches.pop(0))
 
     def clientRequestHandler(self, socket, events):
         print("Client Request")

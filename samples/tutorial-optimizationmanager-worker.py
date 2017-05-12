@@ -33,7 +33,7 @@ if __name__ == '__main__':
         sendSocket.send("JOB_REQUEST", flags=zmq.SNDMORE)
         sendSocket.send_pyobj(jobRequestParams)
 
-        available = receiveSocket.poll(1)
+        available = receiveSocket.poll(1000)
         if available > 0:
             # Reset the incativity counter
             inactivityCounter = 0
@@ -61,5 +61,7 @@ if __name__ == '__main__':
                 sendSocket = zmqContext.socket(zmq.PUB)
                 sendSocket.connect("tcp://127.0.0.1:5002")
                 receiveSocket.close()
+                receiveSocket = zmqContext.socket(zmq.SUB)
                 receiveSocket.subscribe(str(myUid))
                 receiveSocket.connect("tcp://127.0.0.1:5003")
+                time.sleep(5)
