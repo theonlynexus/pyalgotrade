@@ -19,8 +19,6 @@
 """
 .. moduleauthor:: Massimo Fierro <massimo.fierro@gmail.com>
 """
-import sys
-sys.path = ["."] + sys.path
 import uuid
 import zmq
 import marshal
@@ -32,6 +30,7 @@ import json
 import imp
 import itertools
 import os
+import random
 import string
 from tornado import web
 from zmq.eventloop import ioloop
@@ -175,6 +174,8 @@ class Batch():
 
         self.completed = []
 
+        self.processing = []
+
         self.returns = dict()
 
 
@@ -282,7 +283,7 @@ class OptimizationManager(threading.Thread):
             for batch in self.batches:
                 if batch.uid == params.jobParams.batchUid:
                     batch.returns[params.jobParams.params] = params.returns
-                    batch.paramGrid.remove(params.jobParams.params)
+                    batch.processing.remove(params.jobParams.params)
                     batch.completed.append(params.jobParams.params)
                     print("Returns for job: {} = {}".format(
                         params.jobParams.uid, params.returns))
@@ -292,6 +293,7 @@ class OptimizationManager(threading.Thread):
             print("JOB_REQUEST from worker: {}".format(params.workerUid))
 
             if len(self.batches) > 0:
+                # Distribute any non-pending workload
                 batch = self.batches[0]
                 if len(batch.paramGrid) > 0:
                     jobParams = JobSubmitParameters(uuid.uuid4(),
@@ -302,6 +304,27 @@ class OptimizationManager(threading.Thread):
                                                     batch.feed,
                                                     batch.strat,
                                                     batch.paramGrid[0])
+                    batch.processing.append(batch.paramGrid.pop(0))
+                    self.workerReplySocket.send(params.workerUid,
+                                                flags=zmq.SNDMORE)
+                    self.workerReplySocket.send_pyobj(jobParams)
+                    print("Sending job [{}, {}, {}] "
+                          "to worker: {}".format(jobParams.batchUid,
+                                                 jobParams.strat[0],
+                                                 jobParams.params,
+                                                 params.workerUid))
+                elif len(batch.processing) == 0 and len(batch.processing) > 0:
+                    # Re-distribute pending workload and see if anyone
+                    # returns results faster
+                    idx = random.randrange(0, len(batch.processing))
+                    jobParams = JobSubmitParameters(uuid.uuid4(),
+                                                    batch.uid,
+                                                    batch.submitter,
+                                                    batch.description,
+                                                    batch.data,
+                                                    batch.feed,
+                                                    batch.strat,
+                                                    batch.processing[idx])
                     self.workerReplySocket.send(params.workerUid,
                                                 flags=zmq.SNDMORE)
                     self.workerReplySocket.send_pyobj(jobParams)
@@ -311,6 +334,8 @@ class OptimizationManager(threading.Thread):
                                                  jobParams.params,
                                                  params.workerUid))
                 else:
+                    # Both our non-pending and pending job lists are empty,
+                    # we're done: open a bottle of spumante!
                     batch.completed.append(batch.paramGrid.pop())
 
     def clientRequestHandler(self, socket, events):

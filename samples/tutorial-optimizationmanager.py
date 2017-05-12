@@ -1,5 +1,3 @@
-import sys
-sys.path = ["."] + sys.path
 import itertools
 import json
 import zmq

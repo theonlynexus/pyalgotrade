@@ -1,5 +1,3 @@
-import sys
-sys.path = ["."] + sys.path
 import itertools
 import json
 import uuid
@@ -28,10 +26,11 @@ if __name__ == '__main__':
     with open("samples/rsi2.py", 'r') as f:
         stratCode = zlib.compress(f.read())
 
-    #with open(os.path.abspath(yahoofeed.__file__), 'r') as f:
+    # with open(os.path.abspath(yahoofeed.__file__), 'r') as f:
     with open("pyalgotrade/barfeed/yahoofeed.py", 'r') as f:
         feedCode = zlib.compress(f.read())
-    print("Using the following barfeed file: "+os.path.abspath(yahoofeed.__file__))
+    print("Using the following barfeed file: " +
+          os.path.abspath(yahoofeed.__file__))
 
     paramGrid = [
         ["dia"],
@@ -42,14 +41,14 @@ if __name__ == '__main__':
         range(5, 26)]
 
     params = BatchSubmitParameters(str(uuid.uuid4()),
-                             "Me",
-                             "RSI2 test",
-                             [("dia", dia1),
-                              ("dia", dia2),
-                              ("dia", dia3)],
-                             ["Feed", feedCode],
-                             ["RSI2", stratCode],
-                             paramGrid)
+                                   "Me",
+                                   "RSI2 test",
+                                   [("dia", dia1),
+                                    ("dia", dia2),
+                                    ("dia", dia3)],
+                                   ["Feed", feedCode],
+                                   ["RSI2", stratCode],
+                                   paramGrid)
 
     zmqContext = zmq.Context.instance()
     sendSocket = zmqContext.socket(zmq.PUB)
