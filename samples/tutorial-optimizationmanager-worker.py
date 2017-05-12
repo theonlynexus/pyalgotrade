@@ -56,7 +56,7 @@ if __name__ == '__main__':
             inactivityCounter = inactivityCounter + 1
             if inactivityCounter > 60:
                 # Our love isn't replying, let's try placing
-                # that phone call again...
+                # that phone call again
                 sendSocket.close()
                 sendSocket = zmqContext.socket(zmq.PUB)
                 sendSocket.connect("tcp://127.0.0.1:5002")
