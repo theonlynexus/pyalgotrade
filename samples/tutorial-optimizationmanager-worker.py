@@ -52,11 +52,12 @@ if __name__ == '__main__':
             sendSocket.send("SUBMIT_RESULTS", zmq.SNDMORE)
             sendSocket.send_pyobj(resultSubmitParams)
         else:
-            # Waiting for yo, my love...
+            # Waiting for the server to pass over any jobs
             inactivityCounter = inactivityCounter + 1
             if inactivityCounter > 60:
-                # Our love isn't replying, let's try placing
-                # that phone call again
+                # If we don't get any jobs within 60 seconds assume
+                # that the connection became unavailable and try
+                # connecting again.
                 sendSocket.close()
                 sendSocket = zmqContext.socket(zmq.PUB)
                 sendSocket.connect("tcp://127.0.0.1:5002")
