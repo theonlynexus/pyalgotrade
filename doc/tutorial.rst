@@ -272,6 +272,44 @@ This is the client script:
 
 .. literalinclude:: ../samples/tutorial-lowmem-optimizer-worker.py
 
+Dynamic Distributed Optimization (OptimizationManager)
+------------------------------------------------------
+
+.. _PyZMQ: https://github.com/zeromq/pyzmq
+
+This setup is based around a communication protocol implemented via PyZMQ_.
+The main idea is to have a persistent orchestrator (or manager) that accepts
+bactches from clients and dynamically distributes them one job at a time. 
+Each job is composed of a strategy, strategy parameters, a datafeed and data.
+A job is executed on a worker and workers can join/leave the network at any 
+time.
+
+In order to run an optimization network you will need one OptimizationManager 
+instance that will run 24/7, at least one client and at least one worker.
+
+Following is an example of how to setup the OptimizationManager:
+
+.. literalinclude:: ../samples/tutorial-optimizationmanager.py
+
+Then a worker (in order to start more than one worker simply run the 
+script as many times as needed):
+
+.. literalinclude:: ../samples/tutorial-optimizationmanager-worker.py
+
+And finally a client:
+
+.. literalinclude:: ../samples/tutorial-optimizationmanager-client.py
+
+Workers and clients can be on different networks as long as the manager has
+access to both and the OptimizationManager also provides a very basic 
+interface to keep track of outstanding/completed batches and jobs. In the
+example the web interface can be accessed at http://127.0.0.1:5080.
+
+In order to keep things as dynamic as possible, workers must execute the
+strategy code that is sent with a job. This might be exploited for 
+arbitrary code execution, so **in a production environment it is highly 
+suggested that workers be run in jails/containers/virtual machines**.
+
 Plotting
 --------
 
