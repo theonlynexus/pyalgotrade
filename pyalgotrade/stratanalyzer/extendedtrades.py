@@ -49,6 +49,8 @@ class ExtendedTradesAnalyzer(trades.Trades):
         self.allEntryPrices = []
         self.allExitPrices = []
         self.allContracts = []
+        self.allRunups = []
+        self.allDrawDowns = []
 
     def _updateTrades(self, posTracker):
         # The price doesn't matter since the position should be closed.
@@ -71,6 +73,9 @@ class ExtendedTradesAnalyzer(trades.Trades):
             self._Trades__evenTrades += 1
             self._Trades__evenCommissions.append(posTracker.getCommissions())
 
+        runup = max(posTracker._high-posTracker.entryPrice, netProfit)
+        drawdown = min(posTracker._low-posTracker.entryPrice, netProfit)
+
         self._Trades__all.append(netProfit)
         self._Trades__allReturns.append(netReturn)
         self._Trades__allCommissions.append(posTracker.getCommissions())
@@ -80,6 +85,8 @@ class ExtendedTradesAnalyzer(trades.Trades):
         self.allEntryPrices.append(posTracker.entryPrice)
         self.allExitPrices.append(posTracker.exitPrice)
         self.allContracts.append(posTracker.contracts)
+        self.allRunups.append(runup)
+        self.allDrawDowns.append(drawdown)
 
         posTracker.reset()
 
@@ -154,7 +161,7 @@ class ExtendedTradesAnalyzer(trades.Trades):
         try:
             posTracker = self._Trades__posTrackers[order.getInstrument()]
         except KeyError:
-            posTracker = ExtendedPositionTracker(order.getInstrumentTraits())
+            posTracker = GmassPositionTracker(order.getInstrumentTraits())
             self._Trades__posTrackers[order.getInstrument()] = posTracker
 
         # Update the tracker for this order.
@@ -184,11 +191,14 @@ class ExtendedTradesAnalyzer(trades.Trades):
             try:
                 posTracker = self._Trades__posTrackers[instrument]
             except KeyError:
+                traits = strat.getBroker().getInstrumentTraits(instrument)
+                posTracker = GmassPositionTracker(traits)
+                self._Trades__posTrackers[instrument] = posTracker
                 continue
 
             high = bars[instrument].getHigh()
             low = bars[instrument].getLow()
 
-            posTracker.setHigh(high)
-            posTracker.setLow(low)
-        pass
+            if posTracker.getPosition() != 0:
+                posTracker.setHigh(high)
+                posTracker.setLow(low)

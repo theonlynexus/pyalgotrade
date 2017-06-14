@@ -32,7 +32,7 @@ from pyalgotrade.stratanalyzer.extendedtrades import ExtendedTradesAnalyzer
 class PerformanceReport(object):
     """Class for computing and generating a TradeStation inspired report.
 
-    This class is dependant on openpyxl to output the report and on 
+    This class is dependant on openpyxl to output the report and on
     the ExtendedTradesAnalyzer to have the necessary data.
 
     :param filename: The filename to save the report as.
@@ -135,7 +135,7 @@ class PerformanceReport(object):
             trades_sheet.cell(row=excelRow + 1, column=4, value=exitPrices[i])
 
             trades_sheet.cell(row=excelRow, column=5, value=allContracts[i])
-            trades_sheet.cell(row=excelRow + 1, column=5, value=allReturns[i])
+            trades_sheet.cell(row=excelRow + 1, column=5, value=allTrades[i])
             # TODO(max): Should this include or exclude commissions?
             trades_sheet.cell(
                 row=excelRow + 1, column=5).number_format = numFormat
@@ -143,13 +143,13 @@ class PerformanceReport(object):
             if longFlags[i]:
                 # TODO(max): Check formula with commissions!
                 profitPerc = ((
-                    entryPrices[i] - allCommissions[i] / allContracts[i]) /
-                    exitPrices[i] - 1)
+                    exitPrices[i] - allCommissions[i] / allContracts[i]) /
+                    entryPrices[i] - 1)
             else:
                 # TODO(max): Check formula with commissions!
                 profitPerc = - \
-                    entryPrices[i] / (exitPrices[i] +
-                                      allCommissions[i] / allContracts[i]) - 1
+                    exitPrices[i] / (entryPrices[i] +
+                                     allCommissions[i] / allContracts[i]) - 1
             trades_sheet.cell(row=excelRow, column=6, value=profitPerc)
             trades_sheet.cell(
                 row=excelRow, column=6).number_format = perFormat
@@ -158,14 +158,23 @@ class PerformanceReport(object):
             #     profit = (exitPrices[i]-entryPrices[i])*allContracts[i]
             # else:
             #     profit = -(exitPrices[i]-entryPrices[i])*allContracts[i]
-            cumulativePnL = cumulativeProfit + allReturns[i]
-            if allReturns[i] > 0:
-                cumulativeProfit = cumulativeProfit + allReturns[i]
+            cumulativePnL = cumulativePnL + allTrades[i]
+            if allTrades[i] > 0:
+                cumulativeProfit = cumulativeProfit + allTrades[i]
             else:
-                cumulativeLosses = cumulativeLosses + allReturns[i]
+                cumulativeLosses = cumulativeLosses + allTrades[i]
             trades_sheet.cell(row=excelRow + 1, column=6, value=cumulativePnL)
             trades_sheet.cell(
                 row=excelRow + 1, column=6).number_format = numFormat
+
+            trades_sheet.cell(row=excelRow, column=7,
+                              value=trades.allRunups[i])
+            trades_sheet.cell(row=excelRow,
+                              column=7).number_format = numFormat
+            trades_sheet.cell(row=excelRow + 1, column=7,
+                              value=trades.allDrawDowns[i])
+            trades_sheet.cell(row=excelRow + 1,
+                              column=7).number_format = numFormat
 
             # Set standard font, and highlight style for 2nd row of trade
             for col in range(1, 10):
@@ -201,14 +210,14 @@ class PerformanceReport(object):
         summarySheet["B6"].alignment = headerAlign
 
         summarySheet["B8"] = "Net Profits"
-        summarySheet["D8"] = cumulativeProfit
+        summarySheet["D8"] = cumulativeProfit + cumulativeLosses
         summarySheet["D8"].number_format = numFormat
 
         summarySheet["F8"] = "Open position P/L"
         summarySheet["H8"] = ""
 
         summarySheet["B9"] = "Gross Profits"
-        summarySheet["D9"] = cumulativeProfit - cumulativeLosses
+        summarySheet["D9"] = cumulativeProfit
         summarySheet["D9"].number_format = numFormat
         summarySheet["D9"].comment = Comment(
             "Net profits - Gross losses, i.e. Net profits + Abs(Gross losses)",
@@ -238,44 +247,54 @@ class PerformanceReport(object):
 
         summarySheet["B14"] = "Largest winning trade"
         if trades.getProfitableCount() > 0:
-            summarySheet["D14"] = trades.getPositiveReturns().max()
+            summarySheet["D14"] = allTrades.max()
         else:
             summarySheet["D14"] = 0
         summarySheet["D14"].number_format = numFormat
 
         summarySheet["F14"] = "Largest losing trade"
         if trades.getUnprofitableCount() > 0:
-            summarySheet["H14"] = trades.getNegativeReturns().max()
+            summarySheet["H14"] = allTrades.min()
         else:
             summarySheet["H14"] = 0
         summarySheet["H14"].number_format = numFormat
 
+        def negativeToZero(x):
+            if x > 0:
+                return x
+            else:
+                return 0
+
+        def positiveToZero(x):
+            if x >= 0:
+                return 0
+            else:
+                return x
+
+        avgWin = 0
+        avgLoss = 0
         if trades.getCount() > 0:
-            avgWin = trades.getPositiveReturns().mean()
-        else:
-            avgWin = 0
+            avgWin = cumulativeProfit / trades.getProfitableCount()
         summarySheet["B15"] = "Average winning trade"
         summarySheet["D15"] = avgWin
         summarySheet["D15"].number_format = numFormat
 
         if trades.getCount() > 0:
-            avgLoss = trades.getNegativeReturns().mean()
-        else:
-            avgLoss = 0
+            avgLoss = cumulativeLosses / trades.getUnprofitableCount()
         summarySheet["F15"] = "Average losing trade"
         summarySheet["H15"] = avgLoss
         summarySheet["H15"].number_format = numFormat
 
         summarySheet["B16"] = "Ratio avg. win/avg. loss"
-        if avgLoss > 0:
-            summarySheet["D16"] = avgWin / -avgLoss
+        if avgLoss != 0:
+            summarySheet["D16"] = - avgWin / avgLoss
         else:
             summarySheet["D16"] = 'NaN'
-        summarySheet["D16"].number_format = perFormat
+        summarySheet["D16"].number_format = numFormat
 
         summarySheet["F16"] = "Avg trade (win & loss)"
         if trades.getCount() > 0:
-            summarySheet["H16"] = allReturns.mean()
+            summarySheet["H16"] = cumulativePnL / trades.getCount()
         else:
             summarySheet["H16"] = 0
         summarySheet["H16"].number_format = numFormat
@@ -284,14 +303,13 @@ class PerformanceReport(object):
         summarySheet["D21"] = ""
 
         summarySheet["B22"] = "Profit factor"
-        if cumulativeLosses > 0:
-            summarySheet["D22"] = (
-                cumulativeProfit + cumulativeLosses) / -cumulativeLosses
+        if cumulativeLosses != 0:
+            summarySheet["D22"] = - cumulativeProfit / cumulativeLosses
+            summarySheet["D22"].number_format = numFormat
         else:
-            summarySheet["D22"] = 0
-        summarySheet["D22"].number_format = perFormat
+            summarySheet["D22"] = "Inf"
         summarySheet["D22"].comment = Comment(
-            "Gross profits / - Gross losses", "Report")
+            "- Gross profits / Gross losses", "Report")
 
         summarySheet["F22"] = "Max contracts held"
         summarySheet["H22"] = ""
