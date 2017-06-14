@@ -2,6 +2,7 @@
 .. moduleauthor:: Massimo Fierro <massimo.fierro@gmail.com>
 """
 
+from pyalgotrade.stratanalyzer.returns import PositionTracker
 from pyalgotrade.stratanalyzer import returns
 
 

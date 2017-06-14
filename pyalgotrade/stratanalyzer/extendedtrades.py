@@ -24,7 +24,7 @@ from pyalgotrade import broker
 
 from pyalgotrade.stratanalyzer import trades
 from pyalgotrade.stratanalyzer import returns
-from pyalgotrade.stratanalyzer import extendedpositiontracker
+from pyalgotrade.stratanalyzer.extendedpositiontracker import ExtendedPositionTracker
 
 import numpy as np
 
@@ -161,7 +161,7 @@ class ExtendedTradesAnalyzer(trades.Trades):
         try:
             posTracker = self._Trades__posTrackers[order.getInstrument()]
         except KeyError:
-            posTracker = GmassPositionTracker(order.getInstrumentTraits())
+            posTracker = ExtendedPositionTracker(order.getInstrumentTraits())
             self._Trades__posTrackers[order.getInstrument()] = posTracker
 
         # Update the tracker for this order.
@@ -192,7 +192,7 @@ class ExtendedTradesAnalyzer(trades.Trades):
                 posTracker = self._Trades__posTrackers[instrument]
             except KeyError:
                 traits = strat.getBroker().getInstrumentTraits(instrument)
-                posTracker = GmassPositionTracker(traits)
+                posTracker = ExtendedPositionTracker(traits)
                 self._Trades__posTrackers[instrument] = posTracker
                 continue
 
