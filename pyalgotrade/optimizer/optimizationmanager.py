@@ -145,6 +145,21 @@ class BatchSubmitParameters():
 
 
 ###################################################
+class BatchResultsRequestParameters():
+    def __init__(self, uid, submitter):
+        self.uid = uid
+        self.submitter = submitter
+
+
+###################################################
+class BatchResultsReplyParameters():
+    def __init__(self, uid, paramGrid, results):
+        self.uid = uid
+        self.paramGrid = paramGrid
+        self.results = results
+
+
+###################################################
 class ResultSubmitParameters():
     def __init__(self, workerUid, jobParams, returns, userData=None):
         self.workerUid = workerUid
@@ -171,8 +186,11 @@ class Batch():
         exec(codeline)
 
         self.paramGrid = []
+
+        i = 0
         for paramSet in paramIter:
             self.paramGrid.append(paramSet)
+            i = i + 1
 
         self.completed = []
 
@@ -186,6 +204,18 @@ class MainHandler(tornado.web.RequestHandler):
     def initialize(self, batches, completeBatches):
         self.batches = batches
         self.completeBatches = completeBatches
+
+    def getMax(self, iterable):
+        if len(iterable) == 0:
+            return None
+
+        maxVal = None
+        maxIdx = None
+        for key, value in iterable.items():
+            if maxVal is None or value > maxVal:
+                maxVal = value
+                maxIdx = key
+        return (maxVal, maxIdx)
 
     def get(self):
         self.write("<h3>Pending optimization batches</h3>")
@@ -211,6 +241,9 @@ class MainHandler(tornado.web.RequestHandler):
             self.write("<li>Submitter: {}</li>".format(batch.submitter))
             self.write("<li>Description: {}</li>".format(batch.description))
             self.write("<li>Strategy: {}</li>".format(batch.strat[0]))
+            (maxVal, maxParams) = self.getMax(batch.returns)
+            self.write("<li>Best returns: {}</li>".format(maxVal))
+            self.write("<li>... with parameters: {}</li>".format(maxParams))
             self.write("</ul>")
             self.write("</p>")
 
@@ -314,26 +347,42 @@ class OptimizationManager(threading.Thread):
     def processClientRequest(self, topicFrame, paramsFrame):
         if topicFrame == "SUBMIT_BATCH":
             params = pickle.loads(paramsFrame)
-            # print("{}, {}, {}".format(
-            #     params.uid, params.submitter, params.description))
+            print("SUBMIT_BATCH from client {}, uid: {}, "
+                  "description:{}".format(params.submitter, params.uid,
+                                          params.description))
             batch = Batch(params)
             self.batches.append(batch)
+        elif topicFrame == "REQUEST_RESULTS":
+            params = pickle.loads(paramsFrame)
+            print("REQUEST_RESULTS from client {}, submitter: {}, "
+                  "description:{}".format(params.uid, params.submitter))
+            replyParams = batchResultsReplyParameters(None, None, None)
+            for batch in self.completeBatches:
+                if batch.uid == params.uid:
+                    replyParams = batchResultsReplyParameters(
+                        batch.uid,
+                        batch.paramGrid,
+                        batch.results
+                    )
+            self.clientReplySocket.send(params.uid,
+                                        flags=zmq.SNDMORE)
+            self.clientReplySocket.send_pyobj(replyParams)
 
     def processWorkerRequest(self, topicFrame, paramsFrame):
         if topicFrame == "SUBMIT_RESULTS":
             params = pickle.loads(paramsFrame)
-            # print("SUBMIT_RESULTS from worker: {}".format(params.workerUid))
+            print("SUBMIT_RESULTS from worker: {}".format(params.workerUid))
             for batch in self.batches:
                 if batch.uid == params.jobParams.batchUid:
                     batch.returns[params.jobParams.params] = params.returns
                     batch.processing.remove(params.jobParams.params)
                     batch.completed.append(params.jobParams.params)
-                    # print("Returns for job: {} = {}".format(
-                    #     params.jobParams.uid, params.returns))
+                    print("Returns for job: {} = {}".format(
+                        params.jobParams.uid, params.returns))
 
         if topicFrame == "JOB_REQUEST":
             params = pickle.loads(paramsFrame)
-            # print("JOB_REQUEST from worker: {}".format(params.workerUid))
+            print("JOB_REQUEST from worker: {}".format(params.workerUid))
 
             if len(self.batches) > 0:
                 # Distribute any non-pending workload
@@ -351,11 +400,11 @@ class OptimizationManager(threading.Thread):
                     self.workerReplySocket.send(params.workerUid,
                                                 flags=zmq.SNDMORE)
                     self.workerReplySocket.send_pyobj(jobParams)
-                    # print("Sending job [{}, {}, {}] "
-                    #       "to worker: {}".format(jobParams.batchUid,
-                    #                              jobParams.strat[0],
-                    #                              jobParams.params,
-                    #                              params.workerUid))
+                    print("Sending job [{}, {}, {}] "
+                          "to worker: {}".format(jobParams.batchUid,
+                                                 jobParams.strat[0],
+                                                 jobParams.params,
+                                                 params.workerUid))
                 elif len(batch.paramGrid) == 0 and len(batch.processing) > 0:
                     # Re-distribute pending workload and see if anyone
                     # returns results faster
@@ -371,18 +420,18 @@ class OptimizationManager(threading.Thread):
                     self.workerReplySocket.send(params.workerUid,
                                                 flags=zmq.SNDMORE)
                     self.workerReplySocket.send_pyobj(jobParams)
-                    # print("Sending job [{}, {}, {}] "
-                    #       "to worker: {}".format(jobParams.batchUid,
-                    #                              jobParams.strat[0],
-                    #                              jobParams.params,
-                    #                              params.workerUid))
+                    print("Sending job [{}, {}, {}] "
+                          "to worker: {}".format(jobParams.batchUid,
+                                                 jobParams.strat[0],
+                                                 jobParams.params,
+                                                 params.workerUid))
                 else:
                     # Both our non-pending and pending job lists are empty,
                     # we're done: open a bottle of spumante!
                     self.completeBatches.append(self.batches.pop(0))
 
     def clientRequestHandler(self, socket, events):
-        # print("Client Request")
+        print("Client Request")
         frames = socket.recv_multipart()
         if len(frames) < 2:
             raise Exception("Client request too short")
@@ -393,7 +442,7 @@ class OptimizationManager(threading.Thread):
         self.processClientRequest(topic, params)
 
     def workerRequestHandler(self, socket, events):
-        # print("Worker Request")
+        print("Worker Request")
         frames = socket.recv_multipart()
         if len(frames) < 2:
             raise Exception("Worker request too short")
