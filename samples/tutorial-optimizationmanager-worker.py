@@ -1,3 +1,4 @@
+import traceback
 import itertools
 import json
 import uuid
@@ -43,14 +44,17 @@ if __name__ == '__main__':
             topic = frames.pop(0)
             jobParams = pickle.loads(frames.pop(0))
 
-            job = Job(jobParams)
-            job.run()
-
-            resultSubmitParams = ResultSubmitParameters(myUid,
-                                                        jobParams,
-                                                        job.strat.getResult())
-            sendSocket.send("SUBMIT_RESULTS", zmq.SNDMORE)
-            sendSocket.send_pyobj(resultSubmitParams)
+            try:
+                job = Job(jobParams)
+                job.run()
+                resultSubmitParams = ResultSubmitParameters(
+                    myUid, jobParams, job.strat.getResult())
+                sendSocket.send("SUBMIT_RESULTS", zmq.SNDMORE)
+                sendSocket.send_pyobj(resultSubmitParams)
+            except Exception as e:
+                print "Worker {}, exception: {}\nStacktrace: {}".format(
+                    myUid, e.message, repr(traceback.format_stack())
+                )
         else:
             # Waiting for the server to pass over any jobs
             inactivityCounter = inactivityCounter + 1
