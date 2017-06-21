@@ -344,6 +344,13 @@ class OptimizationManager(threading.Thread):
     def __exit__(self, exc_type, exc_value, traceback):
         self._shutdown()
 
+    def publishBatchResults(self, uid, params):
+        print("PUBLISH_RESULTS".format(uid))
+        print("Publishing results for batch: {}".format(uid))
+        self.clientReplySocket.send(uid,
+                                    flags=zmq.SNDMORE)
+        self.clientReplySocket.send_pyobj(params)
+
     def processClientRequest(self, topicFrame, paramsFrame):
         if topicFrame == "SUBMIT_BATCH":
             params = pickle.loads(paramsFrame)
@@ -362,11 +369,9 @@ class OptimizationManager(threading.Thread):
                     replyParams = batchResultsReplyParameters(
                         batch.uid,
                         batch.paramGrid,
-                        batch.results
+                        batch.returns
                     )
-            self.clientReplySocket.send(params.uid,
-                                        flags=zmq.SNDMORE)
-            self.clientReplySocket.send_pyobj(replyParams)
+            self.publishBatchResults(params.uid, replyParams)
 
     def processWorkerRequest(self, topicFrame, paramsFrame):
         if topicFrame == "SUBMIT_RESULTS":
@@ -400,7 +405,7 @@ class OptimizationManager(threading.Thread):
                     self.workerReplySocket.send(params.workerUid,
                                                 flags=zmq.SNDMORE)
                     self.workerReplySocket.send_pyobj(jobParams)
-                    print("Sending job [{}, {}, {}] "
+                    print("Sending batch [{}, {}, {}] "
                           "to worker: {}".format(jobParams.batchUid,
                                                  jobParams.strat[0],
                                                  jobParams.params,
@@ -428,7 +433,14 @@ class OptimizationManager(threading.Thread):
                 else:
                     # Both our non-pending and pending job lists are empty,
                     # we're done: open a bottle of spumante!
-                    self.completeBatches.append(self.batches.pop(0))
+                    batch = self.batches.pop(0)
+                    self.completeBatches.append(batch)
+                    replyParams = BatchResultsReplyParameters(
+                        batch.uid,
+                        batch.paramGrid,
+                        batch.returns
+                    )
+                    self.publishBatchResults(batch.uid, replyParams)
 
     def clientRequestHandler(self, socket, events):
         print("Client Request")
