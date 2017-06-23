@@ -88,9 +88,10 @@ class Job():
     def run(self):
         modname = "feed_" + string.replace(self.batchUid, "-", "_")
         filename = modname + ".py"
-        with open(filename, 'wb') as f:
-            f.write(zlib.decompress(self.feedCode))
-            f.close()
+        if not os.path.exists(filename):
+            with open(filename, 'wb') as f:
+                f.write(zlib.decompress(self.feedCode))
+                f.close()
         try:
             (modfile, pathname, desc) = imp.find_module(modname, ["."])
             imp.load_module(modname, modfile, pathname, desc)
@@ -113,9 +114,10 @@ class Job():
 
         modname = "strat_" + string.replace(self.batchUid, "-", "_")
         filename = modname + ".py"
-        with open(filename, 'w') as f:
-            f.write(zlib.decompress(self.stratCode))
-            f.close()
+        if not os.path.exists(filename):
+            with open(filename, 'w') as f:
+                f.write(zlib.decompress(self.stratCode))
+                f.close()
         try:
             (modfile, pathname, desc) = imp.find_module(modname, ["."])
             imp.load_module(modname, modfile, pathname, desc)
@@ -385,9 +387,12 @@ class OptimizationManager(threading.Thread):
                     batch.userData[params.jobParams.params] = params.userData
                     if params.jobParams.params in batch.processing:
                         batch.processing.remove(params.jobParams.params)
-                        batch.completed.append(params.jobParams.params)                        
+                        batch.completed.append(params.jobParams.params)
                         print("Returns for job: {} = {}".format(
                             params.jobParams.uid, params.returns))
+                        print("User data: {}".format(
+                            params.userData
+                        ))
 
         if topicFrame == "JOB_REQUEST":
             params = pickle.loads(paramsFrame)
