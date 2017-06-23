@@ -153,10 +153,11 @@ class BatchResultsRequestParameters():
 
 ###################################################
 class BatchResultsReplyParameters():
-    def __init__(self, uid, paramGrid, results):
+    def __init__(self, uid, paramGrid, results, userData=None):
         self.uid = uid
         self.paramGrid = paramGrid
         self.results = results
+        self.userData = userData
 
 
 ###################################################
@@ -197,6 +198,7 @@ class Batch():
         self.processing = []
 
         self.returns = dict()
+        self.userData = dict()
 
 
 ###################################################
@@ -380,10 +382,12 @@ class OptimizationManager(threading.Thread):
             for batch in self.batches:
                 if batch.uid == params.jobParams.batchUid:
                     batch.returns[params.jobParams.params] = params.returns
-                    batch.processing.remove(params.jobParams.params)
-                    batch.completed.append(params.jobParams.params)
-                    print("Returns for job: {} = {}".format(
-                        params.jobParams.uid, params.returns))
+                    batch.userData[params.jobParams.params] = params.userData
+                    if params.jobParams.params in batch.processing:
+                        batch.processing.remove(params.jobParams.params)
+                        batch.completed.append(params.jobParams.params)                        
+                        print("Returns for job: {} = {}".format(
+                            params.jobParams.uid, params.returns))
 
         if topicFrame == "JOB_REQUEST":
             params = pickle.loads(paramsFrame)
@@ -438,7 +442,8 @@ class OptimizationManager(threading.Thread):
                     replyParams = BatchResultsReplyParameters(
                         batch.uid,
                         batch.paramGrid,
-                        batch.returns
+                        batch.returns,
+                        batch.userData
                     )
                     self.publishBatchResults(batch.uid, replyParams)
 
