@@ -418,8 +418,8 @@ class OptimizationManager(threading.Thread):
             self.publishBatchResults(params.uid, replyParams)
 
     def processWorkerRequest(self, topicFrame, paramsFrame):
-        if len(self.batches) > self._maxResultsStored:
-            self.batches.pop(0)
+        if len(self.completeBatches) > self._maxResultsStored:
+            self.completeBatches.pop(0)
 
         if topicFrame == "SUBMIT_RESULTS":
             params = pickle.loads(paramsFrame)
