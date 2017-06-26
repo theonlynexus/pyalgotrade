@@ -33,7 +33,7 @@ import os
 import random
 import string
 import tornado
-import md5
+import hashlib
 import fasteners
 from tornado import web
 from zmq.eventloop import ioloop
@@ -49,10 +49,11 @@ class JobSubmitParameters():
         self.description = description
         self.data = data
         # self.dataChecksum = md5.md5(data).hexdigest()
+	self.dataChecksum = "bogus"
         self.feed = feed
-        self.feedChecksum = md5.md5(feed[1]).hexdigest()
+        self.feedChecksum = hashlib.md5(feed[1]).hexdigest()
         self.strat = strat
-        self.stratChecksum = md5.md5(strat[1]).hexdigest()
+        self.stratChecksum = hashlib.md5(strat[1]).hexdigest()
         self.params = params
 
 
@@ -69,7 +70,7 @@ class Job():
         self.batchUid = jobParameters.batchUid
 
         self.data = jobParameters.data
-        self.dataChecksum = jobParameters.dataChecksum
+        # self.dataChecksum = jobParameters.dataChecksum
 
         self.feedName = jobParameters.feed[0]
         self.feedCode = jobParameters.feed[1]
@@ -94,23 +95,28 @@ class Job():
         return ", ".join(map(lambda x: self.decorateParam(x), self.params))
 
     def actuallyWriteFile(self, filename, code):
-        cheksumFilename = "md5_" + filename
+	print("actuallyWriteFile({}, {})".format(
+	    filename, "code"))
+        checksumFilename = "md5_" + filename
         with open(filename, 'wb') as f:
             f.write(code)
             f.close()
         with open(filename, 'rb') as f:
             fileChecksum = hashlib.md5(f.read()).hexdigest()
-        with open(cheksumFilename, 'wb') as f:
+	    f.close()
+        with open(checksumFilename, 'wb') as f:
             f.write(fileChecksum)
             f.close()
 
     def writeModule(self, filename, code, checksum):
-        cheksumFilename = "md5_" + filename
+	print("writeModule({}, {}, {})".format(
+	    filename, "code", checksum))
+        checksumFilename = "md5_" + filename
         with fasteners.InterProcessLock(filename):
-            if not os.path.exists(filename):
+            if not os.path.exists(checksumFilename):
                 self.actuallyWriteFile(filename, code)
             else:
-                with open(cheksumFilename, 'rb') as f:
+                with open(checksumFilename, 'rb') as f:
                     fileChecksum = f.read()
                     print("fileChecksum = {}, checksum = {}".format(
                         fileChecksum, checksum
@@ -120,7 +126,9 @@ class Job():
                     self.actuallyWriteFile(filename, code)
 
     def loadModule(self, filename, modname):
-        with fasteners.InterProcessLock(modfile):
+	print("loadModule({}, {})".format(
+	    filename, modname))
+        with fasteners.InterProcessLock(filename):
             try:
                 (modfile, pathname, desc) = imp.find_module(modname, ["."])
                 imp.load_module(modname, modfile, pathname, desc)
@@ -144,10 +152,9 @@ class Job():
         i = 0
         for (instrument, data) in self.data:
             filename = self.batchUid + "_data_" + str(i) + ".csv"
-            self.writeModule(filename, zlib.decompress(data))
             if not os.path.exists(filename):
                 with open(filename, 'w') as f:
-                    f.write()
+                    f.write(zlib.decompress(data))
                     f.close()
             self.feed.addBarsFromCSV(instrument, filename)
             i = i + 1
