@@ -33,6 +33,8 @@ import os
 import random
 import string
 import tornado
+import md5
+import fasteners
 from tornado import web
 from zmq.eventloop import ioloop
 
@@ -46,8 +48,11 @@ class JobSubmitParameters():
         self.submitter = submitter
         self.description = description
         self.data = data
+        # self.dataChecksum = md5.md5(data).hexdigest()
         self.feed = feed
+        self.feedChecksum = md5.md5(feed[1]).hexdigest()
         self.strat = strat
+        self.stratChecksum = md5.md5(strat[1]).hexdigest()
         self.params = params
 
 
@@ -64,12 +69,15 @@ class Job():
         self.batchUid = jobParameters.batchUid
 
         self.data = jobParameters.data
+        self.dataChecksum = jobParameters.dataChecksum
 
         self.feedName = jobParameters.feed[0]
         self.feedCode = jobParameters.feed[1]
+        self.feedChecksum = jobParameters.feedChecksum
 
         self.stratName = jobParameters.strat[0]
         self.stratCode = jobParameters.strat[1]
+        self.stratChecksum = jobParameters.stratChecksum
 
         self.params = jobParameters.params
 
@@ -85,18 +93,49 @@ class Job():
     def makeParamList(self, params):
         return ", ".join(map(lambda x: self.decorateParam(x), self.params))
 
+    def actuallyWriteFile(self, filename, code):
+        cheksumFilename = "md5_" + filename
+        with open(filename, 'wb') as f:
+            f.write(code)
+            f.close()
+        with open(filename, 'rb') as f:
+            fileChecksum = hashlib.md5(f.read()).hexdigest()
+        with open(cheksumFilename, 'wb') as f:
+            f.write(fileChecksum)
+            f.close()
+
+    def writeModule(self, filename, code, checksum):
+        cheksumFilename = "md5_" + filename
+        with fasteners.InterProcessLock(filename):
+            if not os.path.exists(filename):
+                self.actuallyWriteFile(filename, code)
+            else:
+                with open(cheksumFilename, 'rb') as f:
+                    fileChecksum = f.read()
+                    print("fileChecksum = {}, checksum = {}".format(
+                        fileChecksum, checksum
+                    ))
+                    f.close()
+                if fileChecksum != checksum:
+                    self.actuallyWriteFile(filename, code)
+
+    def loadModule(self, filename, modname):
+        with fasteners.InterProcessLock(modfile):
+            try:
+                (modfile, pathname, desc) = imp.find_module(modname, ["."])
+                imp.load_module(modname, modfile, pathname, desc)
+            finally:
+                modfile.close()
+
     def run(self):
         modname = "feed_" + string.replace(self.batchUid, "-", "_")
         filename = modname + ".py"
-        if not os.path.exists(filename):
-            with open(filename, 'wb') as f:
-                f.write(zlib.decompress(self.feedCode))
-                f.close()
-        try:
-            (modfile, pathname, desc) = imp.find_module(modname, ["."])
-            imp.load_module(modname, modfile, pathname, desc)
-        finally:
-            modfile.close()
+
+        self.writeModule(filename,
+                         zlib.decompress(self.feedCode),
+                         self.feedChecksum)
+        self.loadModule(filename, modname)
+
         codeline = "import " + modname
         exec(codeline)
         codeline = "self.feed = " + modname + "." + self.feedName + "()"
@@ -105,24 +144,21 @@ class Job():
         i = 0
         for (instrument, data) in self.data:
             filename = self.batchUid + "_data_" + str(i) + ".csv"
+            self.writeModule(filename, zlib.decompress(data))
             if not os.path.exists(filename):
                 with open(filename, 'w') as f:
-                    f.write(zlib.decompress(data))
+                    f.write()
                     f.close()
             self.feed.addBarsFromCSV(instrument, filename)
             i = i + 1
 
         modname = "strat_" + string.replace(self.batchUid, "-", "_")
         filename = modname + ".py"
-        if not os.path.exists(filename):
-            with open(filename, 'w') as f:
-                f.write(zlib.decompress(self.stratCode))
-                f.close()
-        try:
-            (modfile, pathname, desc) = imp.find_module(modname, ["."])
-            imp.load_module(modname, modfile, pathname, desc)
-        finally:
-            modfile.close()
+        self.writeModule(filename,
+                         zlib.decompress(self.stratCode),
+                         self.stratChecksum)
+        self.loadModule(filename, modname)
+
         codeline = "import " + modname
         exec(codeline)
         parCsv = self.makeParamList(self.params)
@@ -349,8 +385,8 @@ class OptimizationManager(threading.Thread):
         self._shutdown()
 
     def publishBatchResults(self, uid, params):
-        print("PUBLISH_RESULTS".format(uid))
-        print("Publishing results for batch: {}".format(uid))
+        # print("PUBLISH_RESULTS".format(uid))
+        # print("Publishing results for batch: {}".format(uid))
         self.clientReplySocket.send(uid,
                                     flags=zmq.SNDMORE)
         self.clientReplySocket.send_pyobj(params)
@@ -358,15 +394,15 @@ class OptimizationManager(threading.Thread):
     def processClientRequest(self, topicFrame, paramsFrame):
         if topicFrame == "SUBMIT_BATCH":
             params = pickle.loads(paramsFrame)
-            print("SUBMIT_BATCH from client {}, uid: {}, "
-                  "description:{}".format(params.submitter, params.uid,
-                                          params.description))
+            # print("SUBMIT_BATCH from client {}, uid: {}, "
+            #       "description:{}".format(params.submitter, params.uid,
+            #                               params.description))
             batch = Batch(params)
             self.batches.append(batch)
         elif topicFrame == "REQUEST_RESULTS":
             params = pickle.loads(paramsFrame)
-            print("REQUEST_RESULTS from client {}, submitter: {}, "
-                  "description:{}".format(params.uid, params.submitter))
+            # print("REQUEST_RESULTS from client {}, submitter: {}, "
+            #       "description:{}".format(params.uid, params.submitter))
             replyParams = batchResultsReplyParameters(None, None, None)
             for batch in self.completeBatches:
                 if batch.uid == params.uid:
@@ -380,7 +416,7 @@ class OptimizationManager(threading.Thread):
     def processWorkerRequest(self, topicFrame, paramsFrame):
         if topicFrame == "SUBMIT_RESULTS":
             params = pickle.loads(paramsFrame)
-            print("SUBMIT_RESULTS from worker: {}".format(params.workerUid))
+            # print("SUBMIT_RESULTS from worker: {}".format(params.workerUid))
             for batch in self.batches:
                 if batch.uid == params.jobParams.batchUid:
                     batch.returns[params.jobParams.params] = params.returns
@@ -388,15 +424,15 @@ class OptimizationManager(threading.Thread):
                     if params.jobParams.params in batch.processing:
                         batch.processing.remove(params.jobParams.params)
                         batch.completed.append(params.jobParams.params)
-                        print("Returns for job: {} = {}".format(
-                            params.jobParams.uid, params.returns))
-                        print("User data: {}".format(
-                            params.userData
-                        ))
+                        # print("Returns for job: {} = {}".format(
+                        #     params.jobParams.uid, params.returns))
+                        # print("User data: {}".format(
+                        #     params.userData
+                        # ))
 
         if topicFrame == "JOB_REQUEST":
             params = pickle.loads(paramsFrame)
-            print("JOB_REQUEST from worker: {}".format(params.workerUid))
+            # print("JOB_REQUEST from worker: {}".format(params.workerUid))
 
             if len(self.batches) > 0:
                 # Distribute any non-pending workload
@@ -414,11 +450,11 @@ class OptimizationManager(threading.Thread):
                     self.workerReplySocket.send(params.workerUid,
                                                 flags=zmq.SNDMORE)
                     self.workerReplySocket.send_pyobj(jobParams)
-                    print("Sending batch [{}, {}, {}] "
-                          "to worker: {}".format(jobParams.batchUid,
-                                                 jobParams.strat[0],
-                                                 jobParams.params,
-                                                 params.workerUid))
+                    # print("Sending batch [{}, {}, {}] "
+                    #       "to worker: {}".format(jobParams.batchUid,
+                    #                              jobParams.strat[0],
+                    #                              jobParams.params,
+                    #                              params.workerUid))
                 elif len(batch.paramGrid) == 0 and len(batch.processing) > 0:
                     # Re-distribute pending workload and see if anyone
                     # returns results faster
@@ -434,11 +470,11 @@ class OptimizationManager(threading.Thread):
                     self.workerReplySocket.send(params.workerUid,
                                                 flags=zmq.SNDMORE)
                     self.workerReplySocket.send_pyobj(jobParams)
-                    print("Sending job [{}, {}, {}] "
-                          "to worker: {}".format(jobParams.batchUid,
-                                                 jobParams.strat[0],
-                                                 jobParams.params,
-                                                 params.workerUid))
+                    # print("Sending job [{}, {}, {}] "
+                    #       "to worker: {}".format(jobParams.batchUid,
+                    #                              jobParams.strat[0],
+                    #                              jobParams.params,
+                    #                              params.workerUid))
                 else:
                     # Both our non-pending and pending job lists are empty,
                     # we're done: open a bottle of spumante!
@@ -453,7 +489,7 @@ class OptimizationManager(threading.Thread):
                     self.publishBatchResults(batch.uid, replyParams)
 
     def clientRequestHandler(self, socket, events):
-        print("Client Request")
+        # print("Client Request")
         frames = socket.recv_multipart()
         if len(frames) < 2:
             raise Exception("Client request too short")
@@ -464,7 +500,7 @@ class OptimizationManager(threading.Thread):
         self.processClientRequest(topic, params)
 
     def workerRequestHandler(self, socket, events):
-        print("Worker Request")
+        # print("Worker Request")
         frames = socket.recv_multipart()
         if len(frames) < 2:
             raise Exception("Worker request too short")
