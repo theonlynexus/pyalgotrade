@@ -99,19 +99,17 @@ class Job():
         print("actuallyWriteFile({}, {})".format(
             filename, "code"))
         checksumFilename = "md5_" + filename
-        with open(filename, 'wb') as f:
+        with open(filename, 'w+b') as f:
             f.write(code)
             f.close()
         with open(filename, 'rb') as f:
             fileChecksum = md5.md5(f.read()).hexdigest()
             f.close()
-        with open(checksumFilename, 'wb') as f:
+        with open(checksumFilename, 'w+b') as f:
             f.write(fileChecksum)
             f.close()
 
     def writeModule(self, filename, code, checksum):
-        print("writeModule({}, {}, {})".format(
-            filename, "code", checksum))
         checksumFilename = "md5_" + filename
         with fasteners.InterProcessLock(filename):
             if not os.path.exists(checksumFilename):
@@ -119,16 +117,11 @@ class Job():
             else:
                 with open(checksumFilename, 'rb') as f:
                     fileChecksum = f.read()
-                    print("fileChecksum = {}, checksum = {}".format(
-                        fileChecksum, checksum
-                    ))
                     f.close()
                 if fileChecksum != checksum:
                     self.actuallyWriteFile(filename, code)
 
     def loadModule(self, filename, modname):
-        print("loadModule({}, {})".format(
-            filename, modname))
         with fasteners.InterProcessLock(filename):
             try:
                 (modfile, pathname, desc) = imp.find_module(modname, ["."])
@@ -137,7 +130,6 @@ class Job():
                 modfile.close()
 
     def run(self):
-        # modname = "feed_" + string.replace(self.batchUid, "-", "_")
         modname = "feed_" + self.feedChecksum
         filename = modname + ".py"
 
@@ -161,7 +153,6 @@ class Job():
             self.feed.addBarsFromCSV(instrument, filename)
             i = i + 1
 
-        # modname = "strat_" + string.replace(self.batchUid, "-", "_")
         modname = "strat_" + self.stratChecksum
         filename = modname + ".py"
         self.writeModule(filename,
@@ -427,6 +418,9 @@ class OptimizationManager(threading.Thread):
             self.publishBatchResults(params.uid, replyParams)
 
     def processWorkerRequest(self, topicFrame, paramsFrame):
+        if len(self.batches) > self._maxResultsStored:
+            self.batches.pop(0)
+
         if topicFrame == "SUBMIT_RESULTS":
             params = pickle.loads(paramsFrame)
             # print("SUBMIT_RESULTS from worker: {}".format(params.workerUid))
@@ -437,13 +431,6 @@ class OptimizationManager(threading.Thread):
                     if params.jobParams.params in batch.processing:
                         batch.processing.remove(params.jobParams.params)
                         batch.completed.append(params.jobParams.params)
-                        if len(batch.completed) > self._maxResultsStored:
-                            batch.completed.pop()
-                        # print("Returns for job: {} = {}".format(
-                        #     params.jobParams.uid, params.returns))
-                        # print("User data: {}".format(
-                        #     params.userData
-                        # ))
 
         if topicFrame == "JOB_REQUEST":
             params = pickle.loads(paramsFrame)
