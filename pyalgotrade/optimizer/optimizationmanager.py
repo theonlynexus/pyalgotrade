@@ -35,6 +35,7 @@ import string
 import tornado
 import hashlib
 import fasteners
+import md5
 from tornado import web
 from zmq.eventloop import ioloop
 
@@ -49,11 +50,11 @@ class JobSubmitParameters():
         self.description = description
         self.data = data
         # self.dataChecksum = md5.md5(data).hexdigest()
-	self.dataChecksum = "bogus"
+        self.dataChecksum = "bogus"
         self.feed = feed
-        self.feedChecksum = hashlib.md5(feed[1]).hexdigest()
+        self.feedChecksum = feed[2]
         self.strat = strat
-        self.stratChecksum = hashlib.md5(strat[1]).hexdigest()
+        self.stratChecksum = strat[2]
         self.params = params
 
 
@@ -95,22 +96,22 @@ class Job():
         return ", ".join(map(lambda x: self.decorateParam(x), self.params))
 
     def actuallyWriteFile(self, filename, code):
-	print("actuallyWriteFile({}, {})".format(
-	    filename, "code"))
+        print("actuallyWriteFile({}, {})".format(
+            filename, "code"))
         checksumFilename = "md5_" + filename
         with open(filename, 'wb') as f:
             f.write(code)
             f.close()
         with open(filename, 'rb') as f:
-            fileChecksum = hashlib.md5(f.read()).hexdigest()
-	    f.close()
+            fileChecksum = md5.md5(f.read()).hexdigest()
+            f.close()
         with open(checksumFilename, 'wb') as f:
             f.write(fileChecksum)
             f.close()
 
     def writeModule(self, filename, code, checksum):
-	print("writeModule({}, {}, {})".format(
-	    filename, "code", checksum))
+        print("writeModule({}, {}, {})".format(
+            filename, "code", checksum))
         checksumFilename = "md5_" + filename
         with fasteners.InterProcessLock(filename):
             if not os.path.exists(checksumFilename):
@@ -126,8 +127,8 @@ class Job():
                     self.actuallyWriteFile(filename, code)
 
     def loadModule(self, filename, modname):
-	print("loadModule({}, {})".format(
-	    filename, modname))
+        print("loadModule({}, {})".format(
+            filename, modname))
         with fasteners.InterProcessLock(filename):
             try:
                 (modfile, pathname, desc) = imp.find_module(modname, ["."])
@@ -136,7 +137,8 @@ class Job():
                 modfile.close()
 
     def run(self):
-        modname = "feed_" + string.replace(self.batchUid, "-", "_")
+        # modname = "feed_" + string.replace(self.batchUid, "-", "_")
+        modname = "feed_" + self.feedChecksum
         filename = modname + ".py"
 
         self.writeModule(filename,
@@ -159,7 +161,8 @@ class Job():
             self.feed.addBarsFromCSV(instrument, filename)
             i = i + 1
 
-        modname = "strat_" + string.replace(self.batchUid, "-", "_")
+        # modname = "strat_" + string.replace(self.batchUid, "-", "_")
+        modname = "strat_" + self.stratChecksum
         filename = modname + ".py"
         self.writeModule(filename,
                          zlib.decompress(self.stratCode),
@@ -329,9 +332,12 @@ class OptimizationManager(threading.Thread):
                  clientIfAddr="127.0.0.1", clientRequestPort=5000,
                  clientReplyPort=5001,
                  workerIfAddr="127.0.0.1", workerRequestPort=5002,
-                 workerReplyPort=5003):
+                 workerReplyPort=5003,
+                 maxResultsStored=10):
         super(OptimizationManager, self).__init__(
             group=None, name="OptimizationManager")
+
+        self._maxResultsStored = maxResultsStored
 
         # This should really be replaced with the new CLIENT-SERVER socket
         # model available in later iterations of ZMQ
@@ -431,6 +437,8 @@ class OptimizationManager(threading.Thread):
                     if params.jobParams.params in batch.processing:
                         batch.processing.remove(params.jobParams.params)
                         batch.completed.append(params.jobParams.params)
+                        if len(batch.completed) > self._maxResultsStored:
+                            batch.completed.pop()
                         # print("Returns for job: {} = {}".format(
                         #     params.jobParams.uid, params.returns))
                         # print("User data: {}".format(

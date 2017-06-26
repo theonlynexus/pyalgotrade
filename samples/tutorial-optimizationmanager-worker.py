@@ -48,7 +48,9 @@ if __name__ == '__main__':
                 job = Job(jobParams)
                 job.run()
                 resultSubmitParams = ResultSubmitParameters(
-                    myUid, jobParams, job.strat.getResult())
+                    myUid, jobParams,
+                    job.strat.getResult(),
+                    job.strat._userData)
                 sendSocket.send("SUBMIT_RESULTS", zmq.SNDMORE)
                 sendSocket.send_pyobj(resultSubmitParams)
             except Exception as e:
