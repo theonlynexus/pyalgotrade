@@ -31,8 +31,9 @@ if __name__ == '__main__':
 
     inactivityCounter = 0
     while True:
-        sendSocket.send("JOB_REQUEST", flags=zmq.SNDMORE)
-        sendSocket.send_pyobj(jobRequestParams)
+        sendSocket.send_multipart(
+            "JOB_REQUEST", pickle.dumps(jobRequestParams)
+        )
 
         available = receiveSocket.poll(1000)
         if available > 0:
@@ -51,8 +52,9 @@ if __name__ == '__main__':
                     myUid, jobParams,
                     job.strat.getResult(),
                     job.strat._userData)
-                sendSocket.send("SUBMIT_RESULTS", zmq.SNDMORE)
-                sendSocket.send_pyobj(resultSubmitParams)
+                sendSocket.send_multipart(
+                    "SUBMIT_RESULTS", pickle.dumps(resultSubmitParams)
+                )
             except Exception as e:
                 print "Worker {}, exception: {}\nStacktrace: {}".format(
                     myUid, e.message, repr(traceback.format_stack())
