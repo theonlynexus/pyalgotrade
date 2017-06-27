@@ -95,8 +95,6 @@ class Job():
         return ", ".join(map(lambda x: self.decorateParam(x), self.params))
 
     def actuallyWriteFile(self, filename, code):
-        print("actuallyWriteFile({}, {})".format(
-            filename, "code"))
         checksumFilename = "md5_" + filename
         with open(filename, 'w+b') as f:
             f.write(code)
