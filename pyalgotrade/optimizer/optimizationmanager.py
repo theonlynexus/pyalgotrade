@@ -33,7 +33,6 @@ import os
 import random
 import string
 import tornado
-import hashlib
 import fasteners
 import md5
 from tornado import web
@@ -43,17 +42,14 @@ from zmq.eventloop import ioloop
 ###################################################
 class JobSubmitParameters():
     def __init__(self, uid, batchUid, submitter, description,
-                 data, feed, strat, params):
+                 dataChecksum, feedChecksum, stratChecksum, params):
         self.uid = uid
         self.batchUid = batchUid
         self.submitter = submitter
         self.description = description
-        self.data = data
-        self.dataChecksum = md5.md5(pickle.dumps(data)).hexdigest()
-        self.feed = feed
-        self.feedChecksum = feed[2]
-        self.strat = strat
-        self.stratChecksum = strat[2]
+        self.dataChecksum = dataChecksum
+        self.feedChecksum = feedChecksum
+        self.stratChecksum = stratChecksum
         self.params = params
 
 
@@ -65,22 +61,23 @@ class JobRequestParameters():
 
 ###################################################
 class Job():
-    def __init__(self, jobParameters):
-        self.uid = jobParameters.uid
-        self.batchUid = jobParameters.batchUid
+    def __init__(self, uid, batchUid, data, dataChecksum,
+                 feed, strat, params):
+        self.uid = uid
+        self.batchUid = batchUid
 
-        self.data = jobParameters.data
-        self.dataChecksum = jobParameters.dataChecksum
+        self.data = data
+        self.dataChecksum = dataChecksum
 
-        self.feedName = jobParameters.feed[0]
-        self.feedCode = jobParameters.feed[1]
-        self.feedChecksum = jobParameters.feedChecksum
+        self.feedName = feed[0]
+        self.feedCode = feed[1]
+        self.feedChecksum = feed[2]
 
-        self.stratName = jobParameters.strat[0]
-        self.stratCode = jobParameters.strat[1]
-        self.stratChecksum = jobParameters.stratChecksum
+        self.stratName = strat[0]
+        self.stratCode = strat[1]
+        self.stratChecksum = strat[2]
 
-        self.params = jobParameters.params
+        self.params = params
 
         self.feed = None
         self.strat = None
@@ -133,7 +130,7 @@ class Job():
         filename = modname + ".py"
 
         self.writeModule(filename,
-                         zlib.decompress(self.feedCode),
+                         self.feedCode,
                          self.feedChecksum)
         self.loadModule(filename, modname, self.feedChecksum)
 
@@ -155,7 +152,7 @@ class Job():
         modname = "strat_" + self.stratChecksum
         filename = modname + ".py"
         self.writeModule(filename,
-                         zlib.decompress(self.stratCode),
+                         self.stratCode,
                          self.stratChecksum)
         self.loadModule(filename, modname, self.stratChecksum)
 
@@ -172,11 +169,12 @@ class Job():
 ###################################################
 class BatchSubmitParameters():
     def __init__(self, uid, submitter, description,
-                 data, feed, strat, paramGrid):
+                 data, dataChecksum, feed, strat, paramGrid):
         self.uid = uid
         self.submitter = submitter
         self.description = description
         self.data = data
+        self.dataChecksum = dataChecksum
         self.feed = feed
         self.strat = strat
         self.paramGrid = paramGrid
@@ -214,6 +212,7 @@ class Batch():
         self.submitter = batchParameters.submitter
         self.description = batchParameters.description
         self.data = batchParameters.data
+        self.dataChecksum = batchParameters.dataChecksum
         self.feed = batchParameters.feed
         self.strat = batchParameters.strat
 
@@ -394,6 +393,24 @@ class OptimizationManager(threading.Thread):
                                     flags=zmq.SNDMORE)
         self.clientReplySocket.send_pyobj(params)
 
+    def writeBatchData(self, batch):
+        dataFilename = "data_" + batch.dataChecksum
+        stratFilename = "strat_" + batch.strat[2]
+        feedFilename = "feed_" + batch.feed[2]
+
+        if not os.path.exists(dataFilename):
+            with open(dataFilename, 'w+') as f:
+                f.write(pickle.dumps(batch.data))
+                f.close()
+        if not os.path.exists(stratFilename):
+            with open(stratFilename, 'w+') as f:
+                f.write(pickle.dumps(batch.strat))
+                f.close()
+        if not os.path.exists(feedFilename):
+            with open(feedFilename, 'w+') as f:
+                f.write(pickle.dumps(batch.feed))
+                f.close()
+
     def processClientRequest(self, topicFrame, paramsFrame):
         if topicFrame == "SUBMIT_BATCH":
             params = pickle.loads(paramsFrame)
@@ -402,7 +419,9 @@ class OptimizationManager(threading.Thread):
             #                               params.description))
             batch = Batch(params)
             self.batches.append(batch)
-        elif topicFrame == "REQUEST_RESULTS":
+            self.writeBatchData(batch)
+
+        if topicFrame == "REQUEST_RESULTS":
             params = pickle.loads(paramsFrame)
             # print("REQUEST_RESULTS from client {}, submitter: {}, "
             #       "description:{}".format(params.uid, params.submitter))
@@ -415,6 +434,13 @@ class OptimizationManager(threading.Thread):
                         batch.returns
                     )
             self.publishBatchResults(params.uid, replyParams)
+
+    def _serveFile(self, workerUid, filename):
+        with open(filename) as f:
+            contents = f.read()
+        self.workerReplySocket.send_multipart(
+            [workerUid, contents]
+        )
 
     def processWorkerRequest(self, topicFrame, paramsFrame):
         if len(self.completeBatches) > self._maxResultsStored:
@@ -431,6 +457,27 @@ class OptimizationManager(threading.Thread):
                         batch.processing.remove(params.jobParams.params)
                         batch.completed.append(params.jobParams.params)
 
+        if topicFrame == "DATA_REQUEST":
+            params = pickle.loads(paramsFrame)
+            workerUid = params[0]
+            checksum = params[1]
+            filename = "data_" + checksum
+            self._serveFile(workerUid, filename)
+
+        if topicFrame == "FEED_REQUEST":
+            params = pickle.loads(paramsFrame)
+            workerUid = params[0]
+            checksum = params[1]
+            filename = "feed_" + checksum
+            self._serveFile(workerUid, filename)
+
+        if topicFrame == "STRAT_REQUEST":
+            params = pickle.loads(paramsFrame)
+            workerUid = params[0]
+            checksum = params[1]
+            filename = "strat_" + checksum
+            self._serveFile(workerUid, filename)
+
         if topicFrame == "JOB_REQUEST":
             params = pickle.loads(paramsFrame)
             # print("JOB_REQUEST from worker: {}".format(params.workerUid))
@@ -443,9 +490,9 @@ class OptimizationManager(threading.Thread):
                                                     batch.uid,
                                                     batch.submitter,
                                                     batch.description,
-                                                    batch.data,
-                                                    batch.feed,
-                                                    batch.strat,
+                                                    batch.dataChecksum,
+                                                    batch.feed[2],
+                                                    batch.strat[2],
                                                     batch.paramGrid[0])
                     batch.processing.append(batch.paramGrid.pop(0))
                     self.workerReplySocket.send(params.workerUid,

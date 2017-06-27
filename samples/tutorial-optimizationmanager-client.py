@@ -7,6 +7,7 @@ import pickle
 import os
 import time
 import zlib
+import md5
 from pyalgotrade.barfeed import yahoofeed
 from pyalgotrade.optimizer.optimizationmanager import BatchSubmitParameters
 
@@ -24,13 +25,11 @@ if __name__ == '__main__':
         dia3 = zlib.compress(f.read())
 
     with open("samples/rsi2.py", 'r') as f:
-        stratCode = zlib.compress(f.read())
+        stratCode = f.read()
 
     # with open(os.path.abspath(yahoofeed.__file__), 'r') as f:
     with open("pyalgotrade/barfeed/yahoofeed.py", 'r') as f:
-        feedCode = zlib.compress(f.read())
-    print("Using the following barfeed file: " +
-          os.path.abspath(yahoofeed.__file__))
+        feedCode = f.read()
 
     paramGrid = [
         ["dia"],
@@ -40,14 +39,21 @@ if __name__ == '__main__':
         range(75, 96),
         range(5, 26)]
 
+    dataList = [("dia", dia1),
+                ("dia", dia2),
+                ("dia", dia3)]
+    dataListChecksum = md5.md5(pickle.dumps(dataList)).hexdigest()
     params = BatchSubmitParameters(str(uuid.uuid4()),
                                    "Me",
                                    "RSI2 test",
-                                   [("dia", dia1),
-                                    ("dia", dia2),
-                                    ("dia", dia3)],
-                                   ["Feed", feedCode],
-                                   ["RSI2", stratCode],
+                                   dataList,
+                                   dataListChecksum,
+                                   ["Feed",
+                                    zlib.compress(feedCode),
+                                    md5.md5(feedCode).hexdigest()],
+                                   ["RSI2",
+                                    zlib.compress(stratCode),
+                                    md5.md5(stratCode).hexdigest()],
                                    paramGrid)
 
     zmqContext = zmq.Context.instance()
