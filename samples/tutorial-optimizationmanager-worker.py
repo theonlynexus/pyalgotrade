@@ -33,7 +33,7 @@ if __name__ == '__main__':
     while True:
         sendSocket.send_multipart(
             ["JOB_REQUEST",
-             zlib.compress(pickle.dumps(jobRequestParams))]
+             pickle.dumps(jobRequestParams)]
         )
 
         available = receiveSocket.poll(1000)
@@ -55,7 +55,7 @@ if __name__ == '__main__':
                     job.strat._userData)
                 sendSocket.send_multipart(
                     ["SUBMIT_RESULTS",
-                     zlib.compress(pickle.dumps(resultSubmitParams))]
+                     pickle.dumps(resultSubmitParams)]
                 )
             except Exception as e:
                 print "Worker {}, exception: {}\nStacktrace: {}".format(

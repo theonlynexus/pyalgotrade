@@ -49,8 +49,7 @@ class JobSubmitParameters():
         self.submitter = submitter
         self.description = description
         self.data = data
-        # self.dataChecksum = md5.md5(data).hexdigest()
-        self.dataChecksum = "bogus"
+        self.dataChecksum = md5.md5(pickle.dumps(data)).hexdigest()
         self.feed = feed
         self.feedChecksum = feed[2]
         self.strat = strat
@@ -71,7 +70,7 @@ class Job():
         self.batchUid = jobParameters.batchUid
 
         self.data = jobParameters.data
-        # self.dataChecksum = jobParameters.dataChecksum
+        self.dataChecksum = jobParameters.dataChecksum
 
         self.feedName = jobParameters.feed[0]
         self.feedCode = jobParameters.feed[1]
@@ -147,7 +146,7 @@ class Job():
 
         i = 0
         for (instrument, data) in self.data:
-            filename = self.batchUid + "_data_" + str(i) + ".csv"
+            filename = self.dataChecksum + "_data_" + str(i) + ".csv"
             if not os.path.exists(filename):
                 with open(filename, 'w') as f:
                     f.write(zlib.decompress(data))
@@ -424,7 +423,7 @@ class OptimizationManager(threading.Thread):
             self.completeBatches.pop(0)
 
         if topicFrame == "SUBMIT_RESULTS":
-            params = pickle.loads(zlib.uncompress(paramsFrame))
+            params = pickle.loads(paramsFrame)
             # print("SUBMIT_RESULTS from worker: {}".format(params.workerUid))
             for batch in self.batches:
                 if batch.uid == params.jobParams.batchUid:
@@ -435,7 +434,7 @@ class OptimizationManager(threading.Thread):
                         batch.completed.append(params.jobParams.params)
 
         if topicFrame == "JOB_REQUEST":
-            params = pickle.loads(zlib.decompress(paramsFrame))
+            params = pickle.loads(paramsFrame)
             # print("JOB_REQUEST from worker: {}".format(params.workerUid))
 
             if len(self.batches) > 0:
@@ -460,7 +459,7 @@ class OptimizationManager(threading.Thread):
                     #                              jobParams.params,
                     #                              params.workerUid))
                 elif len(batch.paramGrid) == 0 and len(batch.processing) > 0:
-                    # Re-distribute pending workload and see if anyone
+                    # Re-distribute pending workload and see if anyonezlib.compress(
                     # returns results faster
                     idx = random.randrange(0, len(batch.processing))
                     jobParams = JobSubmitParameters(uuid.uuid4(),
