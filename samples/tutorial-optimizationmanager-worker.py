@@ -20,11 +20,11 @@ if __name__ == '__main__':
 
     zmqContext = zmq.Context.instance()
     sendSocket = zmqContext.socket(zmq.PUB)
-    sendSocket.connect("tcp://127.0.0.1:5002")
+    sendSocket.connect("tcp://192.168.0.38:5002")
 
     receiveSocket = zmqContext.socket(zmq.SUB)
     receiveSocket.subscribe(str(myUid))
-    receiveSocket.connect("tcp://127.0.0.1:5003")
+    receiveSocket.connect("tcp://192.168.0.38:5003")
 
     # Let the sockets connect
     time.sleep(5)
@@ -32,7 +32,8 @@ if __name__ == '__main__':
     inactivityCounter = 0
     while True:
         sendSocket.send_multipart(
-            ["JOB_REQUEST", pickle.dumps(jobRequestParams)]
+            ["JOB_REQUEST",
+             zlib.compress(pickle.dumps(jobRequestParams))]
         )
 
         available = receiveSocket.poll(1000)
@@ -53,7 +54,8 @@ if __name__ == '__main__':
                     job.strat.getResult(),
                     job.strat._userData)
                 sendSocket.send_multipart(
-                    ["SUBMIT_RESULTS", pickle.dumps(resultSubmitParams)]
+                    ["SUBMIT_RESULTS",
+                     zlib.compress(pickle.dumps(resultSubmitParams))]
                 )
             except Exception as e:
                 print "Worker {}, exception: {}\nStacktrace: {}".format(
@@ -68,9 +70,9 @@ if __name__ == '__main__':
                 # connecting again.
                 sendSocket.close()
                 sendSocket = zmqContext.socket(zmq.PUB)
-                sendSocket.connect("tcp://127.0.0.1:5002")
+                sendSocket.connect("tcp://192.168.0.38:5002")
                 receiveSocket.close()
                 receiveSocket = zmqContext.socket(zmq.SUB)
                 receiveSocket.subscribe(str(myUid))
-                receiveSocket.connect("tcp://127.0.0.1:5003")
+                receiveSocket.connect("tcp://192.168.0.38:5003")
                 time.sleep(5)

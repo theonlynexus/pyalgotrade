@@ -18,6 +18,7 @@
 .. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
 
+from datetime import time
 import pytz
 
 
@@ -30,9 +31,19 @@ class MarketSession(object):
     """
 
     @classmethod
-    def getTimezone(cls):
+    def getTimezone(self):
         """Returns the pytz timezone for the market session."""
-        return cls.timezone
+        return self.timezone
+
+    @classmethod
+    def getOpeningTime(self):
+        """Returns the datetime.time representing the opening time."""
+        return self.openingTime
+
+    @classmethod
+    def getOpeningTime(self):
+        """Returns the datetime.time representing the closing time."""
+        return self.closingTime
 
 
 ######################################################################
@@ -51,6 +62,14 @@ class NYSE(MarketSession):
 class USEquities(MarketSession):
     """US Equities market session."""
     timezone = pytz.timezone("US/Eastern")
+
+
+class ICE(MarketSession):
+    timezone = pytz.timezone("US/Eastern")  # Fix
+
+
+class CME(MarketSession):
+    timezone = pytz.timezone("US/Central")  # Fix
 
 
 ######################################################################
@@ -80,3 +99,10 @@ class FTSE(MarketSession):
 class TSE(MarketSession):
     """Tokyo Stock Exchange market session."""
     timezone = pytz.timezone("Asia/Tokyo")
+
+
+class KRX(MarketSession):
+    """Korea Stock Exchange market session."""
+    timezone = pytz.timezone("Asia/Seoul")
+    openingTime = time(9, 0, 0, 0, timezone)
+    clsoingTime = time(15, 45, 0, 0, timezone)

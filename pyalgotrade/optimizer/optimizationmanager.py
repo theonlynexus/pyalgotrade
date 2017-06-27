@@ -111,7 +111,8 @@ class Job():
 
     def writeModule(self, filename, code, checksum):
         checksumFilename = "md5_" + filename
-        with fasteners.InterProcessLock(filename):
+        lockFilename = "lock_" + checksum
+        with fasteners.InterProcessLock(lockFilename):
             if not os.path.exists(checksumFilename):
                 self.actuallyWriteFile(filename, code)
             else:
@@ -121,8 +122,9 @@ class Job():
                 if fileChecksum != checksum:
                     self.actuallyWriteFile(filename, code)
 
-    def loadModule(self, filename, modname):
-        with fasteners.InterProcessLock(filename):
+    def loadModule(self, filename, modname, checksum):
+        lockFilename = "lock_" + checksum
+        with fasteners.InterProcessLock(lockFilename):
             try:
                 (modfile, pathname, desc) = imp.find_module(modname, ["."])
                 imp.load_module(modname, modfile, pathname, desc)
@@ -136,7 +138,7 @@ class Job():
         self.writeModule(filename,
                          zlib.decompress(self.feedCode),
                          self.feedChecksum)
-        self.loadModule(filename, modname)
+        self.loadModule(filename, modname, self.feedChecksum)
 
         codeline = "import " + modname
         exec(codeline)
@@ -158,7 +160,7 @@ class Job():
         self.writeModule(filename,
                          zlib.decompress(self.stratCode),
                          self.stratChecksum)
-        self.loadModule(filename, modname)
+        self.loadModule(filename, modname, self.stratChecksum)
 
         codeline = "import " + modname
         exec(codeline)
@@ -422,7 +424,7 @@ class OptimizationManager(threading.Thread):
             self.completeBatches.pop(0)
 
         if topicFrame == "SUBMIT_RESULTS":
-            params = pickle.loads(paramsFrame)
+            params = pickle.loads(zlib.uncompress(paramsFrame))
             # print("SUBMIT_RESULTS from worker: {}".format(params.workerUid))
             for batch in self.batches:
                 if batch.uid == params.jobParams.batchUid:
@@ -433,7 +435,7 @@ class OptimizationManager(threading.Thread):
                         batch.completed.append(params.jobParams.params)
 
         if topicFrame == "JOB_REQUEST":
-            params = pickle.loads(paramsFrame)
+            params = pickle.loads(zlib.decompress(paramsFrame))
             # print("JOB_REQUEST from worker: {}".format(params.workerUid))
 
             if len(self.batches) > 0:
