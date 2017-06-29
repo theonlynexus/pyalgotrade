@@ -12,6 +12,8 @@ from pyalgotrade.barfeed import yahoofeed
 from pyalgotrade.optimizer.optimizationmanager import JobRequestParameters
 from pyalgotrade.optimizer.optimizationmanager import ResultSubmitParameters
 from pyalgotrade.optimizer.optimizationmanager import Job
+from pyalgotrade.optimizer.optimizationmanager import decompressAndUnpickle
+from pyalgotrade.optimizer.optimizationmanager import pickleAndCompress
 
 
 def receiveFile(filename):
@@ -36,7 +38,7 @@ def checkDataFile(myUid, checksum):
              pickle.dumps([myUid, checksum])]
         )
         receiveFile(filename)
-    return pickle.loads(readFile(filename))
+    return decompressAndUnpickle(readFile(filename))
 
 
 def checkFeedFile(myUid, checksum):
@@ -47,7 +49,7 @@ def checkFeedFile(myUid, checksum):
              pickle.dumps([myUid, checksum])]
         )
         receiveFile(filename)
-    return pickle.loads(readFile(filename))
+    return decompressAndUnpickle(readFile(filename))
 
 
 def checkStratFile(myUid, checksum):
@@ -58,7 +60,7 @@ def checkStratFile(myUid, checksum):
              pickle.dumps([myUid, checksum])]
         )
         receiveFile(filename)
-    return pickle.loads(readFile(filename))
+    return decompressAndUnpickle(readFile(filename))
 
 if __name__ == '__main__':
     myUid = str(uuid.uuid4())
@@ -93,23 +95,22 @@ if __name__ == '__main__':
             topic = frames.pop(0)
             jobParams = pickle.loads(frames.pop(0))
 
-            dataChecksum = jobParams.dataChecksum
-            stratChecksum = jobParams.stratChecksum
-            feedChecksum = jobParams.feedChecksum
+            dataFilename = "data_" + jobParams.dataChecksum
+            stratFilename = "strat_" + jobParams.stratChecksum
+            feedFilename = "feed_" + jobParams.feedChecksum
 
-            dataFilename = "data_" + dataChecksum
-            stratFilename = "strat_" + stratChecksum
-            feedFilename = "feed_" + feedChecksum
+            data = checkDataFile(myUid, jobParams.dataChecksum)
+            strat = checkStratFile(myUid, jobParams.stratChecksum)
+            feed = checkFeedFile(myUid, jobParams.feedChecksum)
 
-            data = checkDataFile(myUid, dataChecksum)
-            strat = checkStratFile(myUid, stratChecksum)
-            feed = checkFeedFile(myUid, feedChecksum)
-
-            if True:
             # try:
-                job = Job(jobParams.uid, jobParams.batchUid,
-                          data, dataChecksum,
-                          feed, strat, jobParams.params)
+            if True:
+                job = Job(
+                    jobParams.uid, jobParams.batchUid,
+                    data, jobParams.dataChecksum,
+                    feed, jobParams.feedChecksum,
+                    strat, jobParams.stratChecksum,
+                    jobParams.paramSet)
                 job.run()
 
                 userData = None
@@ -117,7 +118,8 @@ if __name__ == '__main__':
                     userData = job.strat._userData
 
                 resultSubmitParams = ResultSubmitParameters(
-                    myUid, jobParams,
+                    myUid,
+                    jobParams,
                     job.strat.getResult(),
                     userData)
                 sendSocket.send_multipart(

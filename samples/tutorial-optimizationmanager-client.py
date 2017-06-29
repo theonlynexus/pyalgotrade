@@ -9,6 +9,7 @@ import time
 import zlib
 import md5
 from pyalgotrade.barfeed import yahoofeed
+from pyalgotrade.optimizer.optimizationmanager import md5digest
 from pyalgotrade.optimizer.optimizationmanager import BatchSubmitParameters
 
 if __name__ == '__main__':
@@ -42,18 +43,16 @@ if __name__ == '__main__':
     dataList = [("dia", dia1),
                 ("dia", dia2),
                 ("dia", dia3)]
-    dataListChecksum = md5.md5(pickle.dumps(dataList)).hexdigest()
+    dataListChecksum = md5digest(dataList)
     params = BatchSubmitParameters(str(uuid.uuid4()),
                                    "Me",
                                    "RSI2 test",
                                    dataList,
                                    dataListChecksum,
-                                   ["Feed",
-                                    zlib.compress(feedCode),
-                                    md5.md5(feedCode).hexdigest()],
-                                   ["RSI2",
-                                    zlib.compress(stratCode),
-                                    md5.md5(stratCode).hexdigest()],
+                                   ["Feed", feedCode],
+                                   md5digest(feedCode),
+                                   ["RSI2", stratCode],
+                                   md5digest(stratCode),
                                    paramGrid)
 
     zmqContext = zmq.Context.instance()

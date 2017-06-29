@@ -39,10 +39,25 @@ from tornado import web
 from zmq.eventloop import ioloop
 
 
+def pickleAndCompress(data):
+    return zlib.compress(pickle.dumps(data))
+
+
+def decompressAndUnpickle(string):
+    return pickle.loads(zlib.decompress(string))
+
+
+def md5digest(string):
+    if isinstance(string, basestring):
+        return md5.md5(string).hexdigest()
+    else:
+        return md5.md5(pickle.dumps(string)).hexdigest()
+
+
 ###################################################
 class JobSubmitParameters():
     def __init__(self, uid, batchUid, submitter, description,
-                 dataChecksum, feedChecksum, stratChecksum, params):
+                 dataChecksum, feedChecksum, stratChecksum, paramSet):
         self.uid = uid
         self.batchUid = batchUid
         self.submitter = submitter
@@ -50,7 +65,7 @@ class JobSubmitParameters():
         self.dataChecksum = dataChecksum
         self.feedChecksum = feedChecksum
         self.stratChecksum = stratChecksum
-        self.params = params
+        self.paramSet = paramSet
 
 
 ###################################################
@@ -61,8 +76,11 @@ class JobRequestParameters():
 
 ###################################################
 class Job():
-    def __init__(self, uid, batchUid, data, dataChecksum,
-                 feed, strat, params):
+    def __init__(self, uid, batchUid,
+                 data, dataChecksum,
+                 feed, feedChecksum,
+                 strat, stratChecksum,
+                 paramSet):
         self.uid = uid
         self.batchUid = batchUid
 
@@ -71,13 +89,13 @@ class Job():
 
         self.feedName = feed[0]
         self.feedCode = feed[1]
-        self.feedChecksum = feed[2]
+        self.feedChecksum = feedChecksum
 
         self.stratName = strat[0]
         self.stratCode = strat[1]
-        self.stratChecksum = strat[2]
+        self.stratChecksum = stratChecksum
 
-        self.params = params
+        self.paramSet = paramSet
 
         self.feed = None
         self.strat = None
@@ -89,7 +107,7 @@ class Job():
             return str(param)
 
     def makeParamList(self, params):
-        return ", ".join(map(lambda x: self.decorateParam(x), self.params))
+        return ", ".join(map(lambda x: self.decorateParam(x), self.paramSet))
 
     def actuallyWriteFile(self, filename, code):
         checksumFilename = "md5_" + filename
@@ -141,7 +159,7 @@ class Job():
 
         i = 0
         for (instrument, data) in self.data:
-            filename = self.dataChecksum + "_data_" + str(i) + ".csv"
+            filename = "data_" + self.dataChecksum + "_" + str(i) + ".csv"
             if not os.path.exists(filename):
                 with open(filename, 'w') as f:
                     f.write(zlib.decompress(data))
@@ -158,7 +176,7 @@ class Job():
 
         codeline = "import " + modname
         exec(codeline)
-        parCsv = self.makeParamList(self.params)
+        parCsv = self.makeParamList(self.paramSet)
         params = "(self.feed, " + parCsv + ")"
         codeline = "self.strat = " + modname + "." + self.stratName + params
         exec(codeline)
@@ -169,15 +187,20 @@ class Job():
 ###################################################
 class BatchSubmitParameters():
     def __init__(self, uid, submitter, description,
-                 data, dataChecksum, feed, strat, paramGrid):
+                 data, dataChecksum,
+                 feed, feedChecksum,
+                 strat, stratChecksum,
+                 paramGrid):
         self.uid = uid
         self.submitter = submitter
         self.description = description
-        self.data = data
+        self.compressedData = pickleAndCompress(data)
         self.dataChecksum = dataChecksum
-        self.feed = feed
-        self.strat = strat
-        self.paramGrid = paramGrid
+        self.compressedFeed = pickleAndCompress(feed)
+        self.feedChecksum = feedChecksum
+        self.compressedStrat = pickleAndCompress(strat)
+        self.stratChecksum = stratChecksum
+        self.compressedParamGrid = pickleAndCompress(paramGrid)
 
 
 ###################################################
@@ -202,7 +225,7 @@ class ResultSubmitParameters():
         self.workerUid = workerUid
         self.jobParams = jobParams
         self.returns = returns
-        self.userData = userData
+        self.userData = pickleAndCompress(userData)
 
 
 ###################################################
@@ -211,15 +234,19 @@ class Batch():
         self.uid = batchParameters.uid
         self.submitter = batchParameters.submitter
         self.description = batchParameters.description
-        self.data = batchParameters.data
+        self.compressedData = batchParameters.compressedData
         self.dataChecksum = batchParameters.dataChecksum
-        self.feed = batchParameters.feed
-        self.strat = batchParameters.strat
+        self.compressedFeed = batchParameters.compressedFeed
+        self.feedChecksum = batchParameters.feedChecksum
+        self.compressedStrat = batchParameters.compressedStrat
+        self.stratChecksum = batchParameters.stratChecksum
+        self.compressedParamGrid = batchParameters.compressedParamGrid
 
+        paramGrid = decompressAndUnpickle(self.compressedParamGrid)
         codeline = "paramIter = itertools.product("
         args = []
-        for i in range(0, len(batchParameters.paramGrid)):
-            args.append("batchParameters.paramGrid[{}]".format(i))
+        for i in range(0, len(paramGrid)):
+            args.append("paramGrid[{}]".format(i))
         codeline = codeline + ", ".join(args) + ")"
         exec(codeline)
 
@@ -236,6 +263,38 @@ class Batch():
 
         self.returns = dict()
         self.userData = dict()
+
+    def getNextParamSet(self):
+        paramSet = None
+        if len(self.paramGrid) > 0:
+            paramSet = self.paramGrid.pop(0)
+            self.processing.append(paramSet)
+        elif len(self.processing) > 0:
+            paramSet = self.processing[0]
+        return paramSet
+
+    def addResults(self, paramSet, returns, userData):
+        if paramSet in self.processing:
+            self.processing.remove(paramSet)
+        if paramSet not in self.completed:
+            self.completed.append(paramSet)
+            self.returns[paramSet] = returns
+            self.userData[paramSet] = userData
+
+    def writeToDisk(self):
+        dataFilename = "data_" + self.dataChecksum
+        stratFilename = "strat_" + self.stratChecksum
+        feedFilename = "feed_" + self.feedChecksum
+
+        if not os.path.exists(dataFilename):
+            with open(dataFilename, 'w+b') as f:
+                f.write(self.compressedData)
+        if not os.path.exists(stratFilename):
+            with open(stratFilename, 'w+b') as f:
+                f.write(self.compressedStrat)
+        if not os.path.exists(feedFilename):
+            with open(feedFilename, 'w+b') as f:
+                f.write(self.compressedFeed)
 
 
 ###################################################
@@ -264,7 +323,8 @@ class MainHandler(tornado.web.RequestHandler):
             self.write("<ul>")
             self.write("<li>Submitter: {}</li>".format(batch.submitter))
             self.write("<li>Description: {}</li>".format(batch.description))
-            self.write("<li>Strategy: {}</li>".format(batch.strat[0]))
+            stratName = decompressAndUnpickle(batch.compressedStrat)[0]
+            self.write("<li>Strategy: {}</li>".format(stratName))
             self.write("<li>Jobs - Remaining: {}, Pending: {}, "
                        "Completed: {}</li>".format(
                            len(batch.paramGrid), len(batch.processing),
@@ -322,11 +382,11 @@ class OptimizationManager(threading.Thread):
                  clientReplyPort=5001,
                  workerIfAddr="127.0.0.1", workerRequestPort=5002,
                  workerReplyPort=5003,
-                 maxResultsStored=10):
+                 maxCompleteBatches=10):
         super(OptimizationManager, self).__init__(
             group=None, name="OptimizationManager")
 
-        self._maxResultsStored = maxResultsStored
+        self._maxResultsStored = maxCompleteBatches
 
         # This should really be replaced with the new CLIENT-SERVER socket
         # model available in later iterations of ZMQ
@@ -393,24 +453,6 @@ class OptimizationManager(threading.Thread):
                                     flags=zmq.SNDMORE)
         self.clientReplySocket.send_pyobj(params)
 
-    def writeBatchData(self, batch):
-        dataFilename = "data_" + batch.dataChecksum
-        stratFilename = "strat_" + batch.strat[2]
-        feedFilename = "feed_" + batch.feed[2]
-
-        if not os.path.exists(dataFilename):
-            with open(dataFilename, 'w+') as f:
-                f.write(pickle.dumps(batch.data))
-                f.close()
-        if not os.path.exists(stratFilename):
-            with open(stratFilename, 'w+') as f:
-                f.write(pickle.dumps(batch.strat))
-                f.close()
-        if not os.path.exists(feedFilename):
-            with open(feedFilename, 'w+') as f:
-                f.write(pickle.dumps(batch.feed))
-                f.close()
-
     def processClientRequest(self, topicFrame, paramsFrame):
         if topicFrame == "SUBMIT_BATCH":
             params = pickle.loads(paramsFrame)
@@ -419,7 +461,7 @@ class OptimizationManager(threading.Thread):
             #                               params.description))
             batch = Batch(params)
             self.batches.append(batch)
-            self.writeBatchData(batch)
+            batch.writeToDisk()
 
         if topicFrame == "REQUEST_RESULTS":
             params = pickle.loads(paramsFrame)
@@ -451,11 +493,10 @@ class OptimizationManager(threading.Thread):
             # print("SUBMIT_RESULTS from worker: {}".format(params.workerUid))
             for batch in self.batches:
                 if batch.uid == params.jobParams.batchUid:
-                    batch.returns[params.jobParams.params] = params.returns
-                    batch.userData[params.jobParams.params] = params.userData
-                    if params.jobParams.params in batch.processing:
-                        batch.processing.remove(params.jobParams.params)
-                        batch.completed.append(params.jobParams.params)
+                    batch.addResults(
+                        params.jobParams.paramSet,
+                        params.returns, 
+                        params.userData)
 
         if topicFrame == "DATA_REQUEST":
             params = pickle.loads(paramsFrame)
@@ -485,40 +526,20 @@ class OptimizationManager(threading.Thread):
             if len(self.batches) > 0:
                 # Distribute any non-pending workload
                 batch = self.batches[0]
-                if len(batch.paramGrid) > 0:
+                paramSet = batch.getNextParamSet()
+                if paramSet is not None:
                     jobParams = JobSubmitParameters(uuid.uuid4(),
                                                     batch.uid,
                                                     batch.submitter,
                                                     batch.description,
                                                     batch.dataChecksum,
-                                                    batch.feed[2],
-                                                    batch.strat[2],
-                                                    batch.paramGrid[0])
-                    batch.processing.append(batch.paramGrid.pop(0))
+                                                    batch.feedChecksum,
+                                                    batch.stratChecksum,
+                                                    paramSet)
                     self.workerReplySocket.send(params.workerUid,
                                                 flags=zmq.SNDMORE)
                     self.workerReplySocket.send_pyobj(jobParams)
                     # print("Sending batch [{}, {}, {}] "
-                    #       "to worker: {}".format(jobParams.batchUid,
-                    #                              jobParams.strat[0],
-                    #                              jobParams.params,
-                    #                              params.workerUid))
-                elif len(batch.paramGrid) == 0 and len(batch.processing) > 0:
-                    # Re-distribute pending workload and see if anyonezlib.compress(
-                    # returns results faster
-                    idx = random.randrange(0, len(batch.processing))
-                    jobParams = JobSubmitParameters(uuid.uuid4(),
-                                                    batch.uid,
-                                                    batch.submitter,
-                                                    batch.description,
-                                                    batch.data,
-                                                    batch.feed,
-                                                    batch.strat,
-                                                    batch.processing[idx])
-                    self.workerReplySocket.send(params.workerUid,
-                                                flags=zmq.SNDMORE)
-                    self.workerReplySocket.send_pyobj(jobParams)
-                    # print("Sending job [{}, {}, {}] "
                     #       "to worker: {}".format(jobParams.batchUid,
                     #                              jobParams.strat[0],
                     #                              jobParams.params,
