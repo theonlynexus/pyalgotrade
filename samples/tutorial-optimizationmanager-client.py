@@ -43,12 +43,11 @@ if __name__ == '__main__':
     dataList = [("dia", dia1),
                 ("dia", dia2),
                 ("dia", dia3)]
-    dataListChecksum = md5digest(dataList)
     params = BatchSubmitParameters(str(uuid.uuid4()),
                                    "Me",
                                    "RSI2 test",
                                    dataList,
-                                   dataListChecksum,
+                                   md5digest(dataList),
                                    ["Feed", feedCode],
                                    md5digest(feedCode),
                                    ["RSI2", stratCode],

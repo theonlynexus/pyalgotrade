@@ -339,7 +339,8 @@ class MainHandler(tornado.web.RequestHandler):
             self.write("<ul>")
             self.write("<li>Submitter: {}</li>".format(batch.submitter))
             self.write("<li>Description: {}</li>".format(batch.description))
-            self.write("<li>Strategy: {}</li>".format(batch.strat[0]))
+            stratName = decompressAndUnpickle(batch.compressedStrat)[0]
+            self.write("<li>Strategy: {}</li>".format(stratName))
             (maxVal, maxParams) = self.getMax(batch.returns)
             self.write("<li>Best returns: {}</li>".format(maxVal))
             self.write("<li>... with parameters: {}</li>".format(maxParams))
