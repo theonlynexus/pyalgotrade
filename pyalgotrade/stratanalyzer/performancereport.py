@@ -273,13 +273,13 @@ class PerformanceReport(object):
 
         avgWin = 0
         avgLoss = 0
-        if trades.getCount() > 0:
+        if trades.getProfitableCount() > 0:
             avgWin = cumulativeProfit / trades.getProfitableCount()
         summarySheet["B15"] = "Average winning trade"
         summarySheet["D15"] = avgWin
         summarySheet["D15"].number_format = numFormat
 
-        if trades.getCount() > 0:
+        if trades.getUnprofitableCount() > 0:
             avgLoss = cumulativeLosses / trades.getUnprofitableCount()
         summarySheet["F15"] = "Average losing trade"
         summarySheet["H15"] = avgLoss
