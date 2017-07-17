@@ -68,10 +68,10 @@ class ExtendedPositionTracker(PositionTracker):
     def sell(self, quantity, price, commission=0.0):
         self._sell(quantity, price, commission)
 
-    def setHigh(self, high):
+    def checkAndSetHigh(self, high):
         if high > self._high or self._high == 0:
             self._high = high
 
-    def setLow(self, low):
+    def checkAndSetLow(self, low):
         if low < self._low or self._low == 0:
             self._low = low

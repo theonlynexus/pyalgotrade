@@ -359,25 +359,6 @@ class OptimizationManager(threading.Thread):
     worker that requests one. Results will be stored locally for further
     consumption by the clients.
     """
-
-    # Interaction with submitters
-    clientRequestSocket = None
-    clientReplySocket = None
-
-    # Interaction with workers
-    workerRequestSocket = None
-    resultsSubmitSocket = None
-
-    poller = None
-
-    zmqContext = zmq.Context.instance()
-
-    router = None
-    loop = None
-
-    batches = []
-    completeBatches = []
-
     def __init__(self, webIfAddr="127.0.0.1", webPort=5080,
                  clientIfAddr="127.0.0.1", clientRequestPort=5000,
                  clientReplyPort=5001,
@@ -386,6 +367,24 @@ class OptimizationManager(threading.Thread):
                  maxCompleteBatches=10):
         super(OptimizationManager, self).__init__(
             group=None, name="OptimizationManager")
+
+        # Interaction with submitters
+        self._clientRequestSocket = None
+        self._clientReplySocket = None
+
+        # Interaction with workers
+        self._workerRequestSocket = None
+        self._resultsSubmitSocket = None
+
+        self._poller = None
+
+        self._zmqContext = zmq.Context.instance()
+
+        self._router = None
+        self._loop = None
+
+        self._batches = []
+        self._completeBatches = []
 
         self._maxResultsStored = maxCompleteBatches
 

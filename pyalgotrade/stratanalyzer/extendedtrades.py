@@ -73,8 +73,8 @@ class ExtendedTradesAnalyzer(trades.Trades):
             self._Trades__evenTrades += 1
             self._Trades__evenCommissions.append(posTracker.getCommissions())
 
-        runup = max(posTracker._high-posTracker.entryPrice, netProfit)
-        drawdown = min(posTracker._low-posTracker.entryPrice, netProfit)
+        runup = max(posTracker._high - posTracker.entryPrice, netProfit)
+        drawdown = min(posTracker._low - posTracker.entryPrice, netProfit)
 
         self._Trades__all.append(netProfit)
         self._Trades__allReturns.append(netReturn)
@@ -90,8 +90,8 @@ class ExtendedTradesAnalyzer(trades.Trades):
 
         posTracker.reset()
 
-    def _updatePosTracker(self, posTracker, price, commission, quantity,
-                          datetime):
+    def __updatePosTracker_impl(self, posTracker, price, commission, quantity,
+                                datetime):
         currentShares = posTracker.getPosition()
 
         if currentShares > 0:  # Current position is long
@@ -148,6 +148,11 @@ class ExtendedTradesAnalyzer(trades.Trades):
             posTracker.sell(quantity * -1, price, commission)
             posTracker.enteredOn = datetime
 
+    def _updatePosTracker(self, posTracker, price, commission, quantity,
+                          datetime):
+        __updatePosTracker_impl(posTracker, price, commission, quantity,
+                                datetime)
+
     def _onOrderEvent(self, broker_, orderEvent):
         # Only interested in filled or partially filled orders.
         if orderEvent.getEventType() not in (
@@ -184,7 +189,7 @@ class ExtendedTradesAnalyzer(trades.Trades):
     def attached(self, strat):
         strat.getBroker().getOrderUpdatedEvent().subscribe(self._onOrderEvent)
 
-    def beforeOnBars(self, strat, bars):
+    def __beforeOnBars_impl(self, strat, bars):
         self._bars = bars
 
         for instrument in bars.keys():
@@ -200,5 +205,8 @@ class ExtendedTradesAnalyzer(trades.Trades):
             low = bars[instrument].getLow()
 
             if posTracker.getPosition() != 0:
-                posTracker.setHigh(high)
-                posTracker.setLow(low)
+                posTracker.checkAndSetHigh(high)
+                posTracker.checkAndSetLow(low)
+
+    def beforeOnBars(self, strat, bars):
+        __beforeOnBars_impl(strat, bars)
