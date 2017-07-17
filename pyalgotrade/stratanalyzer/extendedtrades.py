@@ -150,8 +150,8 @@ class ExtendedTradesAnalyzer(trades.Trades):
 
     def _updatePosTracker(self, posTracker, price, commission, quantity,
                           datetime):
-        __updatePosTracker_impl(posTracker, price, commission, quantity,
-                                datetime)
+        self.__updatePosTracker_impl(posTracker, price, commission, quantity,
+                                     datetime)
 
     def _onOrderEvent(self, broker_, orderEvent):
         # Only interested in filled or partially filled orders.
