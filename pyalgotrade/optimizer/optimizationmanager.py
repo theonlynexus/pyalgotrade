@@ -300,8 +300,8 @@ class Batch():
 ###################################################
 class MainHandler(tornado.web.RequestHandler):
     def initialize(self, batches, completeBatches):
-        self.batches = batches
-        self.completeBatches = completeBatches
+        self._batches = batches
+        self._completeBatches = completeBatches
 
     def getMax(self, iterable):
         if len(iterable) == 0:
@@ -317,7 +317,7 @@ class MainHandler(tornado.web.RequestHandler):
 
     def get(self):
         self.write("<h3>Pending optimization batches</h3>")
-        for batch in self.batches:
+        for batch in self._batches:
             self.write("<p>")
             self.write("Batch {}".format(batch.uid))
             self.write("<ul>")
@@ -333,7 +333,7 @@ class MainHandler(tornado.web.RequestHandler):
             self.write("</p>")
 
         self.write("<h3>Complete optimization batches</h3>")
-        for batch in self.completeBatches:
+        for batch in self._completeBatches:
             self.write("<p>")
             self.write("Batch {}".format(batch.uid))
             self.write("<ul>")
@@ -424,8 +424,8 @@ class OptimizationManager(threading.Thread):
 
         # Setup Tornado application (the web interface)
         self.application = tornado.web.Application([
-            (r"/", MainHandler, dict(batches=self.batches,
-                                     completeBatches=self.completeBatches)),
+            (r"/", MainHandler, dict(batches=self._batches,
+                                     completeBatches=self._completeBatches)),
         ])
         self.application.listen(webPort)
 
@@ -460,7 +460,7 @@ class OptimizationManager(threading.Thread):
             #       "description:{}".format(params.submitter, params.uid,
             #                               params.description))
             batch = Batch(params)
-            self.batches.append(batch)
+            self._batches.append(batch)
             batch.writeToDisk()
 
         if topicFrame == "REQUEST_RESULTS":
@@ -468,7 +468,7 @@ class OptimizationManager(threading.Thread):
             # print("REQUEST_RESULTS from client {}, submitter: {}, "
             #       "description:{}".format(params.uid, params.submitter))
             replyParams = batchResultsReplyParameters(None, None, None)
-            for batch in self.completeBatches:
+            for batch in self._completeBatches:
                 if batch.uid == params.uid:
                     replyParams = batchResultsReplyParameters(
                         batch.uid,
@@ -485,13 +485,13 @@ class OptimizationManager(threading.Thread):
         )
 
     def processWorkerRequest(self, topicFrame, paramsFrame):
-        if len(self.completeBatches) > self._maxResultsStored:
-            self.completeBatches.pop(0)
+        if len(self._completeBatches) > self._maxResultsStored:
+            self._completeBatches.pop(0)
 
         if topicFrame == "SUBMIT_RESULTS":
             params = pickle.loads(paramsFrame)
             # print("SUBMIT_RESULTS from worker: {}".format(params.workerUid))
-            for batch in self.batches:
+            for batch in self._batches:
                 if batch.uid == params.jobParams.batchUid:
                     batch.addResults(
                         params.jobParams.paramSet,
@@ -523,9 +523,9 @@ class OptimizationManager(threading.Thread):
             params = pickle.loads(paramsFrame)
             # print("JOB_REQUEST from worker: {}".format(params.workerUid))
 
-            if len(self.batches) > 0:
+            if len(self._batches) > 0:
                 # Distribute any non-pending workload
-                batch = self.batches[0]
+                batch = self._batches[0]
                 paramSet = batch.getNextParamSet()
                 if paramSet is not None:
                     jobParams = JobSubmitParameters(uuid.uuid4(),
@@ -547,8 +547,8 @@ class OptimizationManager(threading.Thread):
                 else:
                     # Both our non-pending and pending job lists are empty,
                     # we're done: open a bottle of spumante!
-                    batch = self.batches.pop(0)
-                    self.completeBatches.append(batch)
+                    batch = self._batches.pop(0)
+                    self._completeBatches.append(batch)
                     replyParams = BatchResultsReplyParameters(
                         batch.uid,
                         batch.paramGrid,
