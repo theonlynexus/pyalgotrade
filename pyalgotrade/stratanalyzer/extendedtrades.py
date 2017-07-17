@@ -209,4 +209,4 @@ class ExtendedTradesAnalyzer(trades.Trades):
                 posTracker.checkAndSetLow(low)
 
     def beforeOnBars(self, strat, bars):
-        __beforeOnBars_impl(strat, bars)
+        self.__beforeOnBars_impl(strat, bars)
