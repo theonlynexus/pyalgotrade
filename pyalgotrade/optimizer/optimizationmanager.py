@@ -392,20 +392,20 @@ class OptimizationManager(threading.Thread):
         # model available in later iterations of ZMQ
 
         # "Servers" (submitters) interface
-        self.clientRequestSocket = self.zmqContext.socket(zmq.SUB)
+        self.clientRequestSocket = self._zmqContext.socket(zmq.SUB)
         self.clientRequestSocket.bind(
             "tcp://" + str(clientIfAddr) + ":" + str(clientRequestPort))
         self.clientRequestSocket.subscribe("")
-        self.clientReplySocket = self.zmqContext.socket(zmq.PUB)
+        self.clientReplySocket = self._zmqContext.socket(zmq.PUB)
         self.clientReplySocket.bind(
             "tcp://" + str(clientIfAddr) + ":" + str(clientReplyPort))
 
         # Workers interface
-        self.workerRequestSocket = self.zmqContext.socket(zmq.SUB)
+        self.workerRequestSocket = self._zmqContext.socket(zmq.SUB)
         self.workerRequestSocket.bind(
             "tcp://" + str(workerIfAddr) + ":" + str(workerRequestPort))
         self.workerRequestSocket.subscribe("")
-        self.workerReplySocket = self.zmqContext.socket(zmq.PUB)
+        self.workerReplySocket = self._zmqContext.socket(zmq.PUB)
         self.workerReplySocket.bind(
             "tcp://" + str(workerIfAddr) + ":" + str(workerReplyPort))
 
