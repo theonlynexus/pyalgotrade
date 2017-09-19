@@ -29,7 +29,7 @@ from pyalgotrade import dispatchprio
 # This class is responsible for dispatching events from multiple subjects,
 # synchronizing them if necessary.
 class Dispatcher(object):
-    def __init__(self, sleepInterval=0.25):
+    def __init__(self, sleepInterval=0.1):
         self._sleepInterval = sleepInterval
         self.__subjects = []
         self.__stop = False

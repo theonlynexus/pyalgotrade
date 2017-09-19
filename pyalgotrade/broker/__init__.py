@@ -24,9 +24,11 @@ from pyalgotrade import observer
 from pyalgotrade import dispatchprio
 
 
-# This class is used to prevent bugs like the one triggered in testcases.bitstamp_test:TestCase.testRoundingBug.
+# This class is used to prevent bugs like the one triggered in
+# testcases.bitstamp_test:TestCase.testRoundingBug.
 # Why not use decimal.Decimal instead ?
-# 1: I'd have to expose this to users. They'd have to deal with decimal.Decimal and it'll break existing users.
+# 1: I'd have to expose this to users. They'd have to deal with
+# decimal.Decimal and it'll break existing users.
 # 2: numpy arrays built using decimal.Decimal instances have dtype=object.
 class InstrumentTraits(object):
 

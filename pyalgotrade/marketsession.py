@@ -19,24 +19,38 @@
 """
 
 from datetime import time
-from enum import Enum
+from enum import IntEnum
 import pytz
 
 
-class Weekdays(Enum):
-    Su = 0 Sun = 0 Sunday = 0
-    Mo = 1 Mon = 1 Monday = 1
-    Tu = 2 Tue = 2 Tuesday = 2
-    We = 3 Wed = 3 Wednesday = 3
-    Th = 4 Thu = 4 Thursday = 4
-    Fr = 5 Fri = 5 Friday = 5
-    Sa = 6 Sat = 6 Saturday = 6
+class Weekdays(IntEnum):
+    Su = 0
+    Sun = 0
+    Sunday = 0
+    Mo = 1
+    Mon = 1
+    Monday = 1
+    Tu = 2
+    Tue = 2
+    Tuesday = 2
+    We = 3
+    Wed = 3
+    Wednesday = 3
+    Th = 4
+    Thu = 4
+    Thursday = 4
+    Fr = 5
+    Fri = 5
+    Friday = 5
+    Sa = 6
+    Sat = 6
+    Saturday = 6
 
 
 class WeekdayTime(object):
-    def __init__(self):
-        self.time = time(0, 0, 0)
-        self.weekday = Weekdays.Mo
+    def __init__(self, w=Weekdays.Mo, t=time(0, 0, 0)):
+        self.time = t
+        self.weekday = w
 
 
 class DailySession(object):
@@ -67,7 +81,7 @@ class MarketSession(object):
         return self.timezone
 
     @classmethod
-    def getOpeningTime(self):
+    def getSessions(self):
         """Returns the datetime.time representing the opening time."""
         return self.sessions
 

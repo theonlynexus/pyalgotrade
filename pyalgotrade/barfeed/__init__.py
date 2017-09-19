@@ -26,7 +26,8 @@ from pyalgotrade import feed
 from pyalgotrade import dispatchprio
 
 
-# This is only for backward compatibility since Frequency used to be defined here and not in bar.py.
+# This is only for backward compatibility since Frequency used to be
+# defined here and not in bar.py.
 Frequency = bar.Frequency
 
 
@@ -58,7 +59,8 @@ class BaseBarFeed(feed.BaseFeed):
 
     def setUseAdjustedValues(self, useAdjusted):
         if useAdjusted and not self.barsHaveAdjClose():
-            raise Exception("The barfeed doesn't support adjusted close values")
+            raise Exception(
+                "The barfeed doesn't support adjusted close values")
         # This is to affect future dataseries when they get created.
         self.__useAdjustedValues = useAdjusted
         # Update existing dataseries
@@ -75,7 +77,8 @@ class BaseBarFeed(feed.BaseFeed):
     def barsHaveAdjClose(self):
         raise NotImplementedError()
 
-    # Subclasses should implement this and return a pyalgotrade.bar.Bars or None if there are no bars.
+    # Subclasses should implement this and return a pyalgotrade.bar.Bars or
+    # None if there are no bars.
     @abc.abstractmethod
     def getNextBars(self):
         """Override to return the next :class:`pyalgotrade.bar.Bars` in the feed or None if there are no bars.
@@ -96,10 +99,13 @@ class BaseBarFeed(feed.BaseFeed):
         if bars is not None:
             dateTime = bars.getDateTime()
 
-            # Check that current bar datetimes are greater than the previous one.
-            if self.__currentBars is not None and self.__currentBars.getDateTime() >= dateTime:
+            # Check that current bar datetimes are greater than the previous
+            # one.
+            if self.__currentBars is not None and (
+                    self.__currentBars.getDateTime() >= dateTime):
                 raise Exception(
-                    "Bar date times are not in order. Previous datetime was %s and current datetime is %s" % (
+                    "Bar date times are not in order. Previous datetime " +
+                    " was %s and current datetime is %s" % (
                         self.__currentBars.getDateTime(),
                         dateTime
                     )
@@ -164,7 +170,8 @@ class OptimizerBarFeed(BaseBarFeed):
         self.__currDateTime = None
 
         try:
-            self.__barsHaveAdjClose = self.__bars[0][instruments[0]].getAdjClose() is not None
+            self.__barsHaveAdjClose = self.__bars[0][instruments[0]].getAdjClose(
+            ) is not None
         except Exception:
             self.__barsHaveAdjClose = False
 
