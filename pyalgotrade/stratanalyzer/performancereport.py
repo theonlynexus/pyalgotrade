@@ -38,6 +38,7 @@ class PerformanceReport(object):
     :param filename: The filename to save the report as.
     :type trades: :class:`pyalgotrade.stratanalyzer.extendedtrades.ExtendedTradesAnalyzer`.
     """
+
     def __init__(self):
         pass
 
@@ -190,6 +191,57 @@ class PerformanceReport(object):
                                   column=col).border = highlightBorder
 
             excelRow = excelRow + 2
+
+        if trades.openPosition is not None:
+            pos = trades.openPosition.getPosition()
+            if pos != 0:
+                for col in range(1, 10):
+                    trades_sheet.cell(row=excelRow,
+                                      column=col).font = standardFont
+                    trades_sheet.cell(row=excelRow + 1,
+                                      column=col).font = standardFont
+                    trades_sheet.cell(row=excelRow + 1,
+                                      column=col).fill = highlightFill
+                    trades_sheet.cell(row=excelRow + 1,
+                                      column=col).border = highlightBorder
+
+                isLong = trades.openPosition.isLong
+
+                trades_sheet.cell(row=excelRow, column=1, value=i + 1)
+                trades_sheet.cell(row=excelRow, column=1).alignment = Alignment(
+                    horizontal='center')
+                if isLong:
+                    buySell = "Buy"
+                else:
+                    buySell = "Sell"
+                trades_sheet.cell(row=excelRow + 1, column=1, value=buySell)
+                trades_sheet.cell(
+                    row=excelRow + 1, column=1).alignment = Alignment(
+                        horizontal='center')
+
+                entryDate = trades.openPosition.enteredOn
+                trades_sheet.cell(row=excelRow, column=2,
+                                  value=entryDate.strftime("%Y-%m-%d"))
+                trades_sheet.cell(row=excelRow + 1, column=2,
+                                  value=entryDate.strftime("Open"))
+
+                trades_sheet.cell(row=excelRow, column=3,
+                                  value=entryDate.strftime("%H:%M"))
+
+                entryPrice = trades.openPosition.entryPrice
+                trades_sheet.cell(row=excelRow, column=4, value=entryPrice)
+                trades_sheet.cell(row=excelRow+1, column=4, value="--")
+
+                trades_sheet.cell(row=excelRow, column=5, value=pos)
+                trades_sheet.cell(row=excelRow+1, column=5, value="--")
+
+                trades_sheet.cell(row=excelRow, column=6, value="--")
+                trades_sheet.cell(row=excelRow+1, column=6, value="--")
+
+                trades_sheet.cell(row=excelRow, column=8, value="--")
+                trades_sheet.cell(row=excelRow+1, column=8, value="--")
+
+                trades_sheet.cell(row=excelRow+1, column=9, value="--")
 
         # ----- Summary sheeet -----
         titleFont = Font(name="Arial",  size=18, bold=True)

@@ -51,8 +51,11 @@ class ExtendedTradesAnalyzer(trades.Trades):
         self.allContracts = []
         self.allRunups = []
         self.allDrawDowns = []
+        self.openPosition = None
 
     def _updateTrades(self, posTracker):
+        self.openPosition = posTracker
+
         # The price doesn't matter since the position should be closed.
         price = 0
         assert posTracker.getPosition() == 0
