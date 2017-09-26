@@ -195,6 +195,7 @@ class PerformanceReport(object):
         if trades.openPosition is not None:
             pos = trades.openPosition.getPosition()
             if pos != 0:
+                i += 1
                 for col in range(1, 10):
                     trades_sheet.cell(row=excelRow,
                                       column=col).font = standardFont
