@@ -234,7 +234,8 @@ class Broker(broker.Broker):
             bars = self.__barFeed.getCurrentBars()
             for instrument, shares in self.__shares.iteritems():
                 if shares < 0:
-                    instrumentPrice = self._getBar(bars, instrument).getClose(self.getUseAdjustedValues())
+                    instrumentPrice = self._getBar(
+                        bars, instrument).getClose(self.getUseAdjustedValues())
                     ret += instrumentPrice * shares
         return ret
 

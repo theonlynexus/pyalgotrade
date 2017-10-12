@@ -41,6 +41,8 @@ class ExtendedPositionTracker(PositionTracker):
         self.exitDate = None
         self.entryPrice = 0.0
         self.exitPrice = 0.0
+        self.entryEfficiency = 0.0
+        self.exitEfficiency = 0.0
         self.isLong = None
         self.contracts = 0
 

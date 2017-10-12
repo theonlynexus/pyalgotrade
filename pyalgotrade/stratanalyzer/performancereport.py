@@ -25,6 +25,9 @@ from openpyxl.compat import range
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import PatternFill, GradientFill, Border, Side
 from openpyxl.styles import Alignment, Protection, Font
+from openpyxl.chart import LineChart, Reference, Series
+from openpyxl.chart.layout import Layout, ManualLayout
+from openpyxl.chart.axis import DateAxis
 
 from pyalgotrade.stratanalyzer.extendedtrades import ExtendedTradesAnalyzer
 
@@ -55,6 +58,8 @@ class PerformanceReport(object):
 
         summarySheet = wb.create_sheet(title="Summary")
         trades_sheet = wb.create_sheet(title="Trades")
+        equityGraph_sheet = wb.create_sheet(title="EquityChart")
+        detailedEquityGraph_sheet = wb.create_sheet(title="DetailedEquityChart")
 
         # ----- Trades sheeet -----
         numFormat = "[BLACK][>=0]#,##0.0000;[RED][<0]\\(#,##0.0000\\);General"
@@ -89,8 +94,8 @@ class PerformanceReport(object):
 
         allTrades = trades.getAll()
         allReturns = trades.getAllReturns()
-        enteredOn = trades.allEnterDates
-        exitedOn = trades.allExitDates
+        allEntryDates = trades.allEnterDates
+        allExitDates = trades.allExitDates
         longFlags = trades.allLongFlags
         entryPrices = trades.allEntryPrices
         exitPrices = trades.allExitPrices
@@ -102,7 +107,55 @@ class PerformanceReport(object):
         cumulativePnL = 0
         cumulativeLosses = 0
 
+        # ----- Equity graph sheet  -----
+        equityGraph_sheet.cell(
+            row=1, column=1, value="Trade #")
+        equityGraph_sheet.cell(
+            row=1, column=2, value="Equity")
+
+        # -----Detailed Equity graph sheet  -----
+        detailedEquityGraph_sheet.cell(
+            row=1, column=1, value="Timestamp")
+        detailedEquityGraph_sheet.cell(
+            row=1, column=2, value="Equity")
+        r = 2
+        for x in sorted(trades.cumPnlDict):
+            detailedEquityGraph_sheet.cell(row=r, column=1, value=x)
+            detailedEquityGraph_sheet.cell(row=r, column=2, value=trades.cumPnlDict[x])
+            r += 1
+        # Add chart
+        c1 = LineChart()
+        c1.title = "Equity curve"
+        c1.style = 13
+        c1.y_axis.title = 'Equity'
+        c1.x_axis.title = 'Date'
+        c1.y_axis.auto = True
+        c1.y_axis.delete = False
+        c1.x_axis = DateAxis(crossAx=100)
+        c1.x_axis.number_format = 'd-mmm'
+        c1.x_axis.majorTimeUnit = "days"
+        c1.x_axis.delete = False
+        # c1.x_axis.auto = True        
+        c1.legend = None
+        x = Reference(
+            detailedEquityGraph_sheet,
+            min_col=1, min_row=2,
+            max_row=len(trades.cumPnlDict) + 2)
+        y = Reference(
+            detailedEquityGraph_sheet,
+            min_col=2, min_row=2,
+            max_row=len(trades.cumPnlDict) + 2)
+        c1.add_data(y)
+        c1.series[0].smooth = False
+        c1.series[0].graphicalProperties.line.solidFill = "000000"
+        c1.series[0].graphicalProperties.line.width = 10000  # width in EMUs
+        c1.width = 30
+        c1.height = 15
+
+        detailedEquityGraph_sheet.add_chart(c1, "D3")
+
         for i in range(0, trades.getCount()):
+            # --- Trades sheet ---
             for col in range(1, 10):
                 trades_sheet.cell(row=excelRow, column=col).font = standardFont
                 trades_sheet.cell(row=excelRow + 1,
@@ -120,8 +173,8 @@ class PerformanceReport(object):
                 row=excelRow + 1, column=1).alignment = Alignment(
                     horizontal='center')
 
-            entryDate = enteredOn[i]
-            exitDate = exitedOn[i]
+            entryDate = allEntryDates[i]
+            exitDate = allExitDates[i]
             trades_sheet.cell(row=excelRow, column=2,
                               value=entryDate.strftime("%Y-%m-%d"))
             trades_sheet.cell(row=excelRow + 1, column=2,
@@ -135,22 +188,21 @@ class PerformanceReport(object):
             trades_sheet.cell(row=excelRow, column=4, value=entryPrices[i])
             trades_sheet.cell(row=excelRow + 1, column=4, value=exitPrices[i])
 
-            trades_sheet.cell(row=excelRow, column=5, value=allContracts[i])
+            trades_sheet.cell(row=excelRow, column=5,
+                              value=abs(allContracts[i]))
             trades_sheet.cell(row=excelRow + 1, column=5, value=allTrades[i])
             # TODO(max): Should this include or exclude commissions?
             trades_sheet.cell(
                 row=excelRow + 1, column=5).number_format = numFormat
 
-            if longFlags[i]:
+            # TODO(max): Check formula with commissions!
+            profitPerc = (
+                (exitPrices[i] - allCommissions[i] / allContracts[i]) /
+                entryPrices[i]) - 1
+            if not longFlags[i]:
                 # TODO(max): Check formula with commissions!
-                profitPerc = ((
-                    exitPrices[i] - allCommissions[i] / allContracts[i]) /
-                    entryPrices[i] - 1)
-            else:
-                # TODO(max): Check formula with commissions!
-                profitPerc = - \
-                    exitPrices[i] / (entryPrices[i] +
-                                     allCommissions[i] / allContracts[i]) - 1
+                profitPerc = - profitPerc
+
             trades_sheet.cell(row=excelRow, column=6, value=profitPerc)
             trades_sheet.cell(
                 row=excelRow, column=6).number_format = perFormat
@@ -168,6 +220,7 @@ class PerformanceReport(object):
             trades_sheet.cell(
                 row=excelRow + 1, column=6).number_format = numFormat
 
+            # Runup & Drawdown
             trades_sheet.cell(row=excelRow, column=7,
                               value=trades.allRunups[i])
             trades_sheet.cell(row=excelRow,
@@ -176,6 +229,22 @@ class PerformanceReport(object):
                               value=trades.allDrawDowns[i])
             trades_sheet.cell(row=excelRow + 1,
                               column=7).number_format = numFormat
+
+            # Entry & Exit efficiencies
+            trades_sheet.cell(row=excelRow, column=8,
+                              value=trades.allEntryEff[i])
+            trades_sheet.cell(row=excelRow,
+                              column=8).number_format = perFormat
+            trades_sheet.cell(row=excelRow + 1, column=8,
+                              value=trades.allExitEff[i])
+            trades_sheet.cell(row=excelRow + 1,
+                              column=8).number_format = perFormat
+
+            # Total efficiency
+            trades_sheet.cell(row=excelRow + 1, column=9,
+                              value=trades.allTotalEff[i])
+            trades_sheet.cell(row=excelRow + 1,
+                              column=9).number_format = perFormat
 
             # Set standard font, and highlight style for 2nd row of trade
             for col in range(1, 10):
@@ -191,6 +260,13 @@ class PerformanceReport(object):
                                   column=col).border = highlightBorder
 
             excelRow = excelRow + 2
+
+            # ----- Equity graph sheet  -----
+            equityGraph_sheet.cell(
+                row=i + 2, column=1, value=i + 1)
+            equityGraph_sheet.cell(
+                row=i + 2, column=2,
+                value=trades.initialEquity + cumulativePnL)
 
         if trades.openPosition is not None:
             pos = trades.openPosition.getPosition()
@@ -220,7 +296,7 @@ class PerformanceReport(object):
                     row=excelRow + 1, column=1).alignment = Alignment(
                         horizontal='center')
 
-                entryDate = trades.openPosition.enteredOn
+                entryDate = trades.openPosition.entryDate
                 trades_sheet.cell(row=excelRow, column=2,
                                   value=entryDate.strftime("%Y-%m-%d"))
                 trades_sheet.cell(row=excelRow + 1, column=2,
@@ -231,18 +307,49 @@ class PerformanceReport(object):
 
                 entryPrice = trades.openPosition.entryPrice
                 trades_sheet.cell(row=excelRow, column=4, value=entryPrice)
-                trades_sheet.cell(row=excelRow+1, column=4, value="--")
+                trades_sheet.cell(row=excelRow + 1, column=4, value="--")
 
-                trades_sheet.cell(row=excelRow, column=5, value=pos)
-                trades_sheet.cell(row=excelRow+1, column=5, value="--")
+                trades_sheet.cell(row=excelRow, column=5, value=abs(pos))
+                trades_sheet.cell(row=excelRow + 1, column=5, value="--")
 
                 trades_sheet.cell(row=excelRow, column=6, value="--")
-                trades_sheet.cell(row=excelRow+1, column=6, value="--")
+                trades_sheet.cell(row=excelRow + 1, column=6, value="--")
 
                 trades_sheet.cell(row=excelRow, column=8, value="--")
-                trades_sheet.cell(row=excelRow+1, column=8, value="--")
+                trades_sheet.cell(row=excelRow + 1, column=8, value="--")
 
-                trades_sheet.cell(row=excelRow+1, column=9, value="--")
+                trades_sheet.cell(row=excelRow + 1, column=9, value="--")
+
+        # ----- Equity graph sheet -----
+        # Add chart
+        c1 = LineChart()
+        c1.title = "Equity curve"
+        c1.style = 13
+        c1.y_axis.title = 'Equity'
+        c1.x_axis.title = 'Trade #'
+        c1.x_axis.scaling.min = 0
+        c1.x_axis.scaling.max = len(allTrades) + 3
+        c1.x_axis.auto = True
+        c1.y_axis.auto = True
+        c1.x_axis.delete = False
+        c1.y_axis.delete = False
+        c1.legend = None
+        x = Reference(
+            equityGraph_sheet,
+            min_col=1, min_row=2,
+            max_row=len(allTrades) + 2)
+        y = Reference(
+            equityGraph_sheet,
+            min_col=2, min_row=2,
+            max_row=len(allTrades) + 2)
+        c1.add_data(y)
+        c1.series[0].smooth = False
+        c1.series[0].graphicalProperties.line.solidFill = "000000"
+        c1.series[0].graphicalProperties.line.width = 10000  # width in EMUs
+        c1.width = 30
+        c1.height = 15
+
+        equityGraph_sheet.add_chart(c1, "D3")
 
         # ----- Summary sheeet -----
         titleFont = Font(name="Arial",  size=18, bold=True)

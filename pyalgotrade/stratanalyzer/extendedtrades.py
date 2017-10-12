@@ -51,7 +51,15 @@ class ExtendedTradesAnalyzer(trades.Trades):
         self.allContracts = []
         self.allRunups = []
         self.allDrawDowns = []
+        self.allEntryEff = []
+        self.allExitEff = []
+        self.allTotalEff = []
+        self.allEquity = []
+        self.pnlDict = {}
+        self.cumPnlDict = {}
         self.openPosition = None
+        self.initialEquity = None
+        self.cumPnl = 0
 
     def _updateTrades(self, posTracker):
         self.openPosition = posTracker
@@ -76,20 +84,35 @@ class ExtendedTradesAnalyzer(trades.Trades):
             self._Trades__evenTrades += 1
             self._Trades__evenCommissions.append(posTracker.getCommissions())
 
-        runup = max(posTracker._high - posTracker.entryPrice, netProfit)
-        drawdown = min(posTracker._low - posTracker.entryPrice, netProfit)
+        low = posTracker._low
+        high = posTracker._high
+        runup = max(high - posTracker.entryPrice, netProfit)
+        drawdown = min(low - posTracker.entryPrice, netProfit)
+
+        if posTracker.isLong:
+            entryEff = 1 - (posTracker.entryPrice-low)/(high-low)
+            exitEff = (posTracker.exitPrice-low)/(high-low)
+        else:
+            entryEff = (posTracker.entryPrice-low)/(high-low)
+            exitEff = 1 - (posTracker.exitPrice-low)/(high-low)
+
+        rng = high - low
+        totalEff = netProfit / rng
 
         self._Trades__all.append(netProfit)
         self._Trades__allReturns.append(netReturn)
         self._Trades__allCommissions.append(posTracker.getCommissions())
-        self.allEnterDates.append(posTracker.enteredOn)
-        self.allExitDates.append(posTracker.exitedOn)
+        self.allEnterDates.append(posTracker.entryDate)
+        self.allExitDates.append(posTracker.exitDate)
         self.allLongFlags.append(posTracker.isLong)
         self.allEntryPrices.append(posTracker.entryPrice)
         self.allExitPrices.append(posTracker.exitPrice)
         self.allContracts.append(posTracker.contracts)
         self.allRunups.append(runup)
         self.allDrawDowns.append(drawdown)
+        self.allEntryEff.append(entryEff)
+        self.allExitEff.append(exitEff)
+        self.allTotalEff.append(totalEff)
 
         posTracker.reset()
 
@@ -104,7 +127,7 @@ class ExtendedTradesAnalyzer(trades.Trades):
                 newShares = currentShares + quantity
                 if newShares == 0:  # Exit long.
                     posTracker.sell(currentShares, price, commission)
-                    posTracker.exitedOn = datetime
+                    posTracker.exitDate = datetime
                     self._updateTrades(posTracker)
                 elif newShares > 0:  # Sell some shares.
                     posTracker.sell(quantity * -1, price, commission)
@@ -114,13 +137,13 @@ class ExtendedTradesAnalyzer(trades.Trades):
                         currentShares / float(quantity * -1)
                     posTracker.sell(currentShares, price,
                                     proportionalCommission)
-                    posTracker.exitedOn = datetime
+                    posTracker.exitDate = datetime
                     self._updateTrades(posTracker)
                     proportionalCommission = commission * \
                         newShares / float(quantity)
                     posTracker.sell(newShares * -1, price,
                                     proportionalCommission)
-                    posTracker.enteredOn = datetime
+                    posTracker.entryDate = datetime
         elif currentShares < 0:  # Current position is short
             if quantity < 0:  # Increase short position
                 posTracker.sell(quantity * -1, price, commission)
@@ -128,7 +151,7 @@ class ExtendedTradesAnalyzer(trades.Trades):
                 newShares = currentShares + quantity
                 if newShares == 0:  # Exit short.
                     posTracker.buy(currentShares * -1, price, commission)
-                    posTracker._exitedOn = datetime
+                    posTracker.exitDate = datetime
                     self._updateTrades(posTracker)
                 elif newShares < 0:  # Re-buy some shares.
                     posTracker.buy(quantity, price, commission)
@@ -138,18 +161,18 @@ class ExtendedTradesAnalyzer(trades.Trades):
                         commission * currentShares * -1 / float(quantity))
                     posTracker.buy(currentShares * -1, price,
                                    proportionalCommission)
-                    posTracker.exitedOn = datetime
+                    posTracker.exitDate = datetime
                     self._updateTrades(posTracker)
                     proportionalCommission = commission * \
                         newShares / float(quantity)
                     posTracker.buy(newShares, price, proportionalCommission)
-                    posTracker.enteredOn = datetime
+                    posTracker.entryDate = datetime
         elif quantity > 0:
             posTracker.buy(quantity, price, commission)
-            posTracker.enteredOn = datetime
+            posTracker.entryDate = datetime
         else:
             posTracker.sell(quantity * -1, price, commission)
-            posTracker.enteredOn = datetime
+            posTracker.entryDate = datetime
 
     def _updatePosTracker(self, posTracker, price, commission, quantity,
                           datetime):
@@ -186,8 +209,19 @@ class ExtendedTradesAnalyzer(trades.Trades):
         else:  # Unknown action
             assert(False)
 
+        pnl = posTracker.getPnL(price)
+
         self._updatePosTracker(posTracker, price, commission,
                                quantity, execInfo.getDateTime())
+
+        if posTracker.getPosition() == 0:
+            # pnl = price - posTracker.getAvgPrice()
+            if posTracker.isLong is False:
+                pnl = - pnl
+            self.cumPnl += pnl
+            self.cumPnl -= self.lastPnl
+            self.cumPnlDict[execInfo.getDateTime()] = self.cumPnl
+            self.lastPnl = 0
 
     def attached(self, strat):
         strat.getBroker().getOrderUpdatedEvent().subscribe(self._onOrderEvent)
@@ -203,6 +237,23 @@ class ExtendedTradesAnalyzer(trades.Trades):
                 posTracker = ExtendedPositionTracker(traits)
                 self._Trades__posTrackers[instrument] = posTracker
                 continue
+
+            if self.initialEquity is None:
+                self.lastPnl = 0
+                self.initialEquity = strat.getBroker().getCash()
+                self.allEquity.append(self.initialEquity)
+
+            if posTracker is not None and posTracker.getPosition() != 0:
+                pnl = posTracker.getPnL(bars[instrument].getClose())
+                self.pnlDict[bars.getDateTime()] = pnl
+                if pnl != 0:
+                    self.cumPnl += pnl
+                    self.cumPnl -= self.lastPnl
+                    self.lastPnl = pnl
+                # else:
+                #     self.cumPnl -= self.lastPnl
+                #     self.lastPnl = 0
+            self.cumPnlDict[bars.getDateTime()] = self.cumPnl
 
             high = bars[instrument].getHigh()
             low = bars[instrument].getLow()
