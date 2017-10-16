@@ -504,7 +504,10 @@ class BaseStrategy(object):
         # 2: Let the strategy process current bars and submit orders.
         self.onBars(bars)
 
-        # 3: Notify that the bars were processed.
+        # 3: Let analyzers process bars.
+        self.__notifyAnalyzers(lambda s: s.afterOnBars(self, bars))
+
+        # 4: Notify that the bars were processed.
         self.__barsProcessedEvent.emit(self, bars)
 
     def run(self):

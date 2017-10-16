@@ -72,8 +72,10 @@ class ExtendedPositionTracker(PositionTracker):
 
     def checkAndSetHigh(self, high):
         if high > self._high or self._high == 0:
-            self._high = high
+            if self.getPosition() != 0:
+                self._high = high
 
     def checkAndSetLow(self, low):
         if low < self._low or self._low == 0:
-            self._low = low
+            if self.getPosition() != 0:
+                self._low = low

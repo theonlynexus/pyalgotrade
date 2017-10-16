@@ -86,18 +86,29 @@ class ExtendedTradesAnalyzer(trades.Trades):
 
         low = posTracker._low
         high = posTracker._high
-        runup = max(high - posTracker.entryPrice, netProfit)
-        drawdown = min(low - posTracker.entryPrice, netProfit)
+        if posTracker.isLong:
+            runup = max(high - posTracker.entryPrice, netProfit)
+        else:
+            runup = max(posTracker.entryPrice - low, netProfit)
+        if posTracker.isLong:
+            drawdown = min(low - posTracker.entryPrice, netProfit)
+        else:
+            drawdown = min(posTracker.entryPrice - high, netProfit)
+        priceRange = high - low
 
         if posTracker.isLong:
-            entryEff = 1 - (posTracker.entryPrice-low)/(high-low)
-            exitEff = (posTracker.exitPrice-low)/(high-low)
+            entryEff = 1 - (posTracker.entryPrice - low) / priceRange
+            exitEff = (posTracker.exitPrice - low) / priceRange
         else:
-            entryEff = (posTracker.entryPrice-low)/(high-low)
-            exitEff = 1 - (posTracker.exitPrice-low)/(high-low)
+            entryEff = (posTracker.entryPrice - low) / priceRange
+            exitEff = 1 - (posTracker.exitPrice - low) / priceRange
+        totalEff = netProfit / priceRange
 
-        rng = high - low
-        totalEff = netProfit / rng
+        for x in [entryEff, exitEff, totalEff]:
+            if x > 100:
+                x = 100
+            elif x < -100:
+                x = -100
 
         self._Trades__all.append(netProfit)
         self._Trades__allReturns.append(netReturn)
@@ -209,15 +220,14 @@ class ExtendedTradesAnalyzer(trades.Trades):
         else:  # Unknown action
             assert(False)
 
+        # This must be done before updatind the tracker, or the PnL
+        # will be zero if we exit the position
         pnl = posTracker.getPnL(price)
 
         self._updatePosTracker(posTracker, price, commission,
                                quantity, execInfo.getDateTime())
 
         if posTracker.getPosition() == 0:
-            # pnl = price - posTracker.getAvgPrice()
-            if posTracker.isLong is False:
-                pnl = - pnl
             self.cumPnl += pnl
             self.cumPnl -= self.lastPnl
             self.cumPnlDict[execInfo.getDateTime()] = self.cumPnl
@@ -255,12 +265,25 @@ class ExtendedTradesAnalyzer(trades.Trades):
                 #     self.lastPnl = 0
             self.cumPnlDict[bars.getDateTime()] = self.cumPnl
 
+    def beforeOnBars(self, strat, bars):
+        self.__updateLowsAndHighs(strat, bars)
+        self.__beforeOnBars_impl(strat, bars)
+
+    def afterOnBars(self, strat, bars):
+        self.__updateLowsAndHighs(strat, bars)
+
+    def __updateLowsAndHighs(self, strat, bars):
+        for instrument in bars.keys():
+            try:
+                posTracker = self._Trades__posTrackers[instrument]
+            except KeyError:
+                traits = strat.getBroker().getInstrumentTraits(instrument)
+                posTracker = ExtendedPositionTracker(traits)
+                self._Trades__posTrackers[instrument] = posTracker
+                continue
+
             high = bars[instrument].getHigh()
             low = bars[instrument].getLow()
-
-            if posTracker.getPosition() != 0:
-                posTracker.checkAndSetHigh(high)
-                posTracker.checkAndSetLow(low)
-
-    def beforeOnBars(self, strat, bars):
-        self.__beforeOnBars_impl(strat, bars)
+            close = bars[instrument].getClose()
+            posTracker.checkAndSetHigh(high)
+            posTracker.checkAndSetLow(low)

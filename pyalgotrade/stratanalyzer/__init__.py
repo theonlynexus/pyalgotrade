@@ -35,3 +35,6 @@ class StrategyAnalyzer(object):
 
     def beforeOnBars(self, strat, bars):
         pass
+
+    def afterOnBars(self, strat, bars):
+        pass
