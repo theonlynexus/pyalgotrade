@@ -57,8 +57,13 @@ if __name__ == '__main__':
     zmqContext = zmq.Context.instance()
     sendSocket = zmqContext.socket(zmq.PUB)
     sendSocket.connect("tcp://127.0.0.1:5000")
+    receiveSocket = zmqContext.socket(zmq.SUB)
+    sendSocket.connect("tcp://127.0.0.1:5001")
 
     time.sleep(1)
 
     sendSocket.send("SUBMIT_BATCH", flags=zmq.SNDMORE)
     sendSocket.send_pyobj(params)
+
+    frames = receiveSocket.recv_multipart()
+    print frames

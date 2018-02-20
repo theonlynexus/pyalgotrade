@@ -2,7 +2,6 @@ import traceback
 import itertools
 import json
 import uuid
-from rsi2 import RSI2
 import zmq
 import pickle
 import os
@@ -62,6 +61,7 @@ def checkStratFile(myUid, checksum):
         receiveFile(filename)
     return decompressAndUnpickle(readFile(filename))
 
+
 if __name__ == '__main__':
     myUid = str(uuid.uuid4())
 
@@ -103,33 +103,33 @@ if __name__ == '__main__':
             strat = checkStratFile(myUid, jobParams.stratChecksum)
             feed = checkFeedFile(myUid, jobParams.feedChecksum)
 
-            # try:
-            if True:
-                job = Job(
-                    jobParams.uid, jobParams.batchUid,
-                    data, jobParams.dataChecksum,
-                    feed, jobParams.feedChecksum,
-                    strat, jobParams.stratChecksum,
-                    jobParams.paramSet)
-                job.run()
+            try:
+                if True:
+                    job = Job(
+                        jobParams.uid, jobParams.batchUid,
+                        data, jobParams.dataChecksum,
+                        feed, jobParams.feedChecksum,
+                        strat, jobParams.stratChecksum,
+                        jobParams.paramSet)
+                    job.run()
 
-                userData = None
-                if hasattr(job.strat, "_userData"):
-                    userData = job.strat._userData
+                    userData = None
+                    if hasattr(job.strat, "_userData"):
+                        userData = job.strat._userData
 
-                resultSubmitParams = ResultSubmitParameters(
-                    myUid,
-                    jobParams,
-                    job.strat.getResult(),
-                    userData)
-                sendSocket.send_multipart(
-                    ["SUBMIT_RESULTS",
-                     pickle.dumps(resultSubmitParams)]
-                )
-            # except Exception as e:
-            #     print "Worker {}, exception: {}\n".format(
-            #         myUid, e.message)
-            #     traceback.print_stack()
+                    resultSubmitParams = ResultSubmitParameters(
+                        myUid,
+                        jobParams,
+                        job.strat.getResult(),
+                        userData)
+                    sendSocket.send_multipart(
+                        ["SUBMIT_RESULTS",
+                         pickle.dumps(resultSubmitParams)]
+                    )
+            except Exception as e:
+                print "Worker {}, exception: [{}] {}\n".format(
+                    myUid, e.errno, e.strerror)
+                print(traceback.format_exc())
         else:
             # Waiting for the server to pass over any jobs
             inactivityCounter = inactivityCounter + 1
